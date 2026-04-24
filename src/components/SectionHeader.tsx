@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
+
 interface Props {
   code: string;
   title: string;
   subtitle?: string;
-  right?: React.ReactNode;
+  right?: ReactNode;
 }
 export function SectionHeader({ code, title, subtitle, right }: Props) {
   return (

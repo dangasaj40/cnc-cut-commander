@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { SectionHeader } from "@/components/SectionHeader";
 import UsuariosPage from "./Usuarios";

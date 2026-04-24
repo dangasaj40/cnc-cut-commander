@@ -9,7 +9,8 @@ import {
   AlertTriangle, 
   UserCircle,
   LogOut,
-  Settings
+  Settings,
+  ShieldAlert
 } from "lucide-react";
 
 const NAV = [

@@ -21,10 +21,20 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
   );
 }
 
+function DefaultPendingComponent() {
+  return (
+    <div className="min-h-dvh flex items-center justify-center bg-background">
+      <div className="size-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+    </div>
+  );
+}
+
 export const getRouter = () => createRouter({
   routeTree,
   context: {},
   scrollRestoration: true,
+  defaultPreload: false,
   defaultPreloadStaleTime: 0,
   defaultErrorComponent: DefaultErrorComponent,
+  defaultPendingComponent: DefaultPendingComponent,
 });
