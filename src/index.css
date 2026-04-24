@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    color-scheme: dark;
+  }
+  :root {
+    color-scheme: dark;
+  }
+  * { @apply border-border; }
+  body { 
+    @apply bg-background text-foreground antialiased selection:bg-primary/30; 
+    font-family: 'Inter', sans-serif;
+    font-feature-settings: "cv02", "cv05", "cv11";
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+  }
+  select option {
+    background-color: #1a1a1a;
+    color: #ffffff;
+  }
+}
+
+
+@layer components {
+  .glass-card {
+    @apply bg-white/[0.03] border border-white/[0.05] backdrop-blur-xl rounded-2xl shadow-2xl;
+  }
+  
+  .field {
+    @apply bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3.5 text-sm font-medium transition-all outline-none focus:border-primary/50 focus:bg-white/[0.08] focus:ring-4 focus:ring-primary/10 placeholder:text-muted-foreground/50 w-full font-mono text-white shadow-sm shadow-black/20;
+  }
+  
+  .field:focus {
+    @apply shadow-[0_0_15px_rgba(251,191,36,0.1)];
+  }
+  
+  .field option {
+    @apply bg-[#1a1a1a] text-white;
+  }
+  
+  .btn-primary {
+    @apply bg-primary text-black font-black uppercase tracking-widest text-[10px] rounded-xl transition-all active:scale-95 shadow-[0_0_20px_rgba(251,191,36,0.2)] hover:shadow-[0_0_30px_rgba(251,191,36,0.3)] hover:bg-primary/90 py-4;
+  }
+  
+  .btn-secondary {
+    @apply bg-white/5 text-muted-foreground font-bold uppercase tracking-widest text-[10px] rounded-xl border border-white/5 transition-all hover:bg-white/10 hover:text-white py-3 px-4;
+  }
+
+  .nav-item {
+    @apply flex flex-col items-center justify-center gap-1 text-muted-foreground transition-all duration-300;
+  }
+  
+  .nav-item-active {
+    @apply text-primary scale-110;
+  }
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Animations */
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease-out forwards;
+}
