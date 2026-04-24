@@ -16,7 +16,7 @@ function RootWrapper() {
 }
 
 function RootComponent() {
-  const { user, loading } = useAuth();
+  const { user, loading, roles } = useAuth();
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
