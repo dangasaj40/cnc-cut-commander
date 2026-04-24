@@ -66,7 +66,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
              <div className="size-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
              <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-primary">Sincronizando...</span>
           </div>
-        ) : !profile?.ativo || roles.length === 0 ? (
+        ) : (!profile || profile.ativo !== true || roles.length === 0) ? (
           <div className="min-h-[70vh] flex flex-col items-center justify-center text-center px-6">
             <div className="size-24 bg-primary/10 rounded-3xl flex items-center justify-center border border-primary/20 shadow-[0_0_50px_rgba(251,191,36,0.1)] mb-8 animate-pulse">
               <ShieldAlert size={48} className="text-primary" />
