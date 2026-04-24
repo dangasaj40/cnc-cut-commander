@@ -1,4 +1,4 @@
-import { createRouter, useRouter } from "@tanstack/react-router";
+import { createRouter, useRouter, Link } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 
 function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
@@ -14,7 +14,7 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
             onClick={() => { router.invalidate(); reset(); }}
             className="bg-laser text-primary-foreground px-4 py-2 text-xs uppercase tracking-widest font-bold"
           >Tentar novamente</button>
-          <a href="/" className="border border-steel-light px-4 py-2 text-xs uppercase tracking-widest">Início</a>
+          <Link to="/" className="border border-steel-light px-4 py-2 text-xs uppercase tracking-widest">Início</Link>
         </div>
       </div>
     </div>
