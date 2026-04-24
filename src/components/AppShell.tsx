@@ -14,11 +14,11 @@ import {
 } from "lucide-react";
 
 const NAV = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/producao", label: "Corte", icon: PlusCircle },
-  { to: "/historico", label: "Histórico", icon: History },
-  { to: "/operadores", label: "Equipe", icon: Users },
-  { to: "/ocorrencias", label: "Alertas", icon: AlertTriangle },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "supervisor", "viewer"] },
+  { to: "/producao", label: "Corte", icon: PlusCircle, roles: ["admin", "supervisor"] },
+  { to: "/historico", label: "Histórico", icon: History, roles: ["admin", "supervisor", "viewer"] },
+  { to: "/operadores", label: "Equipe", icon: Users, roles: ["admin", "supervisor"] },
+  { to: "/ocorrencias", label: "Alertas", icon: AlertTriangle, roles: ["admin", "supervisor"] },
 ] as const;
 
 export function AppShell({ children }: { children?: ReactNode }) {
@@ -95,7 +95,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
       {profile?.ativo && roles.length > 0 && (
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#09090b] border-t border-white/10 md:hidden px-4 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
           <div className="flex items-center justify-around py-3">
-            {NAV.map((n) => {
+            {NAV.filter(n => n.roles.some(r => roles.includes(r as any))).map((n) => {
               const active = path === n.to || (n.to !== "/" && path.startsWith(n.to));
               const Icon = n.icon;
               return (
@@ -131,8 +131,8 @@ export function AppShell({ children }: { children?: ReactNode }) {
       {/* Side Navigation (Desktop Only) */}
       {profile?.ativo && roles.length > 0 && (
         <nav className="fixed left-0 top-0 bottom-0 w-20 hidden md:flex flex-col items-center py-8 glass border-r border-white/5 z-50">
-           <div className="flex flex-col gap-8 flex-1">
-            {NAV.map((n) => {
+          <div className="flex flex-col gap-8 flex-1">
+            {NAV.filter(n => n.roles.some(r => roles.includes(r as any))).map((n) => {
               const active = path === n.to || (n.to !== "/" && path.startsWith(n.to));
               const Icon = n.icon;
               return (
@@ -147,7 +147,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
                 </Link>
               );
             })}
-           </div>
+          </div>
            {isAdmin && (
              <Link to="/configuracoes" className={`p-3 rounded-2xl transition-all ${path.startsWith("/configuracoes") ? "bg-primary text-black shadow-lg shadow-primary/30" : "text-muted-foreground hover:bg-white/5"}`}>
                 <Settings size={24} />

@@ -37,6 +37,14 @@ function RootComponent() {
     return <Navigate to="/login" />;
   }
 
+  // Trava para Visualizadores (não podem ver produção, equipe ou alertas)
+  const isViewer = !user?.email?.includes("@admin") && roles.includes("viewer") && !roles.includes("admin") && !roles.includes("supervisor");
+  const restrictedPaths = ["/producao", "/operadores", "/ocorrencias", "/configuracoes"];
+  
+  if (isViewer && restrictedPaths.some(p => path.startsWith(p))) {
+    return <Navigate to="/" />;
+  }
+
   if (user && !isAuthPage) {
     return (
       <AppShell>
