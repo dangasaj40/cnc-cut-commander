@@ -39,7 +39,7 @@ function RootComponent() {
 
   // Trava para Visualizadores (não podem ver produção, equipe ou alertas)
   const isViewer = !user?.email?.includes("@admin") && roles.includes("viewer") && !roles.includes("admin") && !roles.includes("supervisor");
-  const restrictedPaths = ["/producao", "/operadores", "/ocorrencias", "/configuracoes"];
+  const restrictedPaths = ["/producao", "/operadores", "/catalogo", "/configuracoes"];
   
   if (isViewer && restrictedPaths.some(p => path.startsWith(p))) {
     return <Navigate to="/" />;

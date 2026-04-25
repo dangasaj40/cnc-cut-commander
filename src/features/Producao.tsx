@@ -223,11 +223,25 @@ export default function ProducaoPage() {
 
             {!form.avulsa && form.nesting && (
               <div className="md:col-span-2">
-                 <div className="bg-primary/5 border border-primary/10 p-5 rounded-2xl flex gap-4">
-                    <CheckCircle2 className="text-primary shrink-0" size={20} />
-                    <div>
-                      <div className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Resumo do Plano</div>
-                      <div className="text-sm font-medium leading-relaxed">{form.peca}</div>
+                 <div className="bg-primary/5 border border-primary/10 p-5 rounded-2xl">
+                    <div className="flex items-center gap-3 mb-4">
+                      <CheckCircle2 className="text-primary shrink-0" size={18} />
+                      <div className="text-[10px] font-bold text-primary uppercase tracking-[0.2em]">Resumo do Plano</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {form.peca.split(" / ").map((item, idx) => {
+                        const match = item.match(/(.+) \(x(\d+)\)/);
+                        if (!match) return <span key={idx} className="badge-item">{item}</span>;
+                        const [_, name, qty] = match;
+                        return (
+                          <div key={idx} className="flex items-center bg-white/5 border border-white/10 rounded-lg overflow-hidden transition-all hover:border-emerald-500/30 group">
+                            <span className="px-3 py-1.5 text-[11px] font-medium text-white/90 group-hover:text-white">{name}</span>
+                            <span className="bg-emerald-500/20 text-emerald-400 px-2 py-1.5 text-[10px] font-black border-l border-white/10 min-w-[32px] text-center">
+                              {qty}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                  </div>
               </div>

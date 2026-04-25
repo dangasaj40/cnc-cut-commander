@@ -13,10 +13,10 @@ import { Route as UsuariosRouteImport } from './routes/usuarios'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ProducaoRouteImport } from './routes/producao'
 import { Route as OperadoresRouteImport } from './routes/operadores'
-import { Route as OcorrenciasRouteImport } from './routes/ocorrencias'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HistoricoRouteImport } from './routes/historico'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
+import { Route as CatalogoRouteImport } from './routes/catalogo'
 import { Route as IndexRouteImport } from './routes/index'
 
 const UsuariosRoute = UsuariosRouteImport.update({
@@ -39,11 +39,6 @@ const OperadoresRoute = OperadoresRouteImport.update({
   path: '/operadores',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OcorrenciasRoute = OcorrenciasRouteImport.update({
-  id: '/ocorrencias',
-  path: '/ocorrencias',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -59,6 +54,11 @@ const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
   path: '/configuracoes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CatalogoRoute = CatalogoRouteImport.update({
+  id: '/catalogo',
+  path: '/catalogo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -67,10 +67,10 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
-  '/ocorrencias': typeof OcorrenciasRoute
   '/operadores': typeof OperadoresRoute
   '/producao': typeof ProducaoRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -78,10 +78,10 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
-  '/ocorrencias': typeof OcorrenciasRoute
   '/operadores': typeof OperadoresRoute
   '/producao': typeof ProducaoRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -90,10 +90,10 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
-  '/ocorrencias': typeof OcorrenciasRoute
   '/operadores': typeof OperadoresRoute
   '/producao': typeof ProducaoRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -103,10 +103,10 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/catalogo'
     | '/configuracoes'
     | '/historico'
     | '/login'
-    | '/ocorrencias'
     | '/operadores'
     | '/producao'
     | '/reset-password'
@@ -114,10 +114,10 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/catalogo'
     | '/configuracoes'
     | '/historico'
     | '/login'
-    | '/ocorrencias'
     | '/operadores'
     | '/producao'
     | '/reset-password'
@@ -125,10 +125,10 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/catalogo'
     | '/configuracoes'
     | '/historico'
     | '/login'
-    | '/ocorrencias'
     | '/operadores'
     | '/producao'
     | '/reset-password'
@@ -137,10 +137,10 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CatalogoRoute: typeof CatalogoRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   HistoricoRoute: typeof HistoricoRoute
   LoginRoute: typeof LoginRoute
-  OcorrenciasRoute: typeof OcorrenciasRoute
   OperadoresRoute: typeof OperadoresRoute
   ProducaoRoute: typeof ProducaoRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
@@ -177,13 +177,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OperadoresRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ocorrencias': {
-      id: '/ocorrencias'
-      path: '/ocorrencias'
-      fullPath: '/ocorrencias'
-      preLoaderRoute: typeof OcorrenciasRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -205,6 +198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracoesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/catalogo': {
+      id: '/catalogo'
+      path: '/catalogo'
+      fullPath: '/catalogo'
+      preLoaderRoute: typeof CatalogoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -217,10 +217,10 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CatalogoRoute: CatalogoRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   HistoricoRoute: HistoricoRoute,
   LoginRoute: LoginRoute,
-  OcorrenciasRoute: OcorrenciasRoute,
   OperadoresRoute: OperadoresRoute,
   ProducaoRoute: ProducaoRoute,
   ResetPasswordRoute: ResetPasswordRoute,

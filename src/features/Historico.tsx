@@ -34,22 +34,18 @@ export default function HistoricoPage() {
   const { isAdmin } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ from: "", to: "", operador: "", balsa: "", nesting: "" });
+  const [filters, setFilters] = useState({ from: "", to: "", peca: "", nesting: "" });
 
   const load = async () => {
     setLoading(true);
     let q = supabase.from("producao").select("*, operador:operadores(nome)").order("data", { ascending: false }).order("created_at", { ascending: false }).limit(500);
     if (filters.from) q = q.gte("data", filters.from);
     if (filters.to) q = q.lte("data", filters.to);
-    if (filters.balsa) q = q.ilike("balsa", `%${filters.balsa}%`);
+    if (filters.peca) q = q.ilike("peca", `%${filters.peca}%`);
     if (filters.nesting) q = q.ilike("nesting", `%${filters.nesting}%`);
     
     const { data } = await q;
-    let r = (data ?? []) as Row[];
-    if (filters.operador) {
-      r = r.filter((x) => x.operador?.nome.toLowerCase().includes(filters.operador.toLowerCase()));
-    }
-    setRows(r);
+    setRows((data ?? []) as Row[]);
     setLoading(false);
   };
 
@@ -80,23 +76,20 @@ export default function HistoricoPage() {
           <Filter size={16} />
           <h2 className="text-[10px] font-bold uppercase tracking-[0.2em]">Filtros de Busca</h2>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <FilterField label="De" icon={<Calendar size={14}/>}>
             <input type="date" className="field" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
           </FilterField>
           <FilterField label="Até" icon={<Calendar size={14}/>}>
             <input type="date" className="field" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} />
           </FilterField>
-          <FilterField label="Operador" icon={<User size={14}/>}>
-            <input className="field" placeholder="Nome..." value={filters.operador} onChange={(e) => setFilters({ ...filters, operador: e.target.value })} />
-          </FilterField>
-          <FilterField label="Balsa" icon={<Hash size={14}/>}>
-            <input className="field" placeholder="Ex: RAKE..." value={filters.balsa} onChange={(e) => setFilters({ ...filters, balsa: e.target.value })} />
+          <FilterField label="Buscar Peça" icon={<Search size={14}/>}>
+            <input className="field" placeholder="Nome da peça..." value={filters.peca} onChange={(e) => setFilters({ ...filters, peca: e.target.value })} />
           </FilterField>
           <FilterField label="Nesting" icon={<Hash size={14}/>}>
             <input className="field" placeholder="Ex: 4465..." value={filters.nesting} onChange={(e) => setFilters({ ...filters, nesting: e.target.value })} />
           </FilterField>
-          <div className="flex items-end">
+          <div className="sm:col-span-2 lg:col-span-4 flex items-end">
             <button onClick={load} className="btn-primary w-full py-3 text-[10px] flex items-center justify-center gap-2">
               <Search size={14} /> Aplicar Filtros
             </button>
@@ -132,8 +125,26 @@ export default function HistoricoPage() {
                     <tr key={r.id} className="hover:bg-white/[0.02] transition-colors group">
                       <td className="px-5 py-4 text-xs font-mono">{r.data}</td>
                       <td className="px-5 py-4">
-                        <div className="text-xs font-bold">{r.peca}</div>
-                        {r.avulsa && <span className="text-[8px] text-primary uppercase font-black tracking-tighter">● Avulsa</span>}
+                        <div className="flex flex-wrap gap-1.5 max-w-[400px]">
+                          {r.peca.split(" / ").map((item, idx) => {
+                            const match = item.match(/(.+) \(x(\d+)\)/);
+                            if (!match) return (
+                              <div key={idx} className="flex items-center bg-white/5 border border-white/10 rounded-md overflow-hidden">
+                                <span className="px-2 py-1 text-[10px] font-medium text-white/90">{item}</span>
+                              </div>
+                            );
+                            const [_, name, qty] = match;
+                            return (
+                              <div key={idx} className="flex items-center bg-white/5 border border-white/10 rounded-md overflow-hidden">
+                                <span className="px-2 py-1 text-[10px] font-medium text-white/90">{name}</span>
+                                <span className="bg-emerald-500/10 text-emerald-400 px-1.5 py-1 text-[10px] font-black border-l border-white/10 min-w-[24px] text-center">
+                                  {qty}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {r.avulsa && <div className="mt-1.5 text-[8px] text-primary uppercase font-black tracking-widest flex items-center gap-1"><span className="size-1 bg-primary rounded-full animate-pulse"/> Peça Individual</div>}
                       </td>
                       <td className="px-5 py-4 text-xs text-muted-foreground">{r.nesting || "—"}</td>
                       <td className="px-5 py-4 text-xs font-medium text-primary/80">{r.balsa || "—"}</td>
@@ -160,12 +171,26 @@ export default function HistoricoPage() {
                   {r.avulsa && <div className="absolute top-0 right-0 bg-primary/20 text-primary text-[8px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-widest">Peça Individual</div>}
                   
                   <div className="flex justify-between items-start">
-                    <div>
-                      <div className="text-[10px] font-mono text-muted-foreground mb-1">{r.data} • {r.nesting || "S/N"}</div>
-                      <h3 className="text-sm font-bold leading-snug">{r.peca}</h3>
+                    <div className="flex-1">
+                      <div className="text-[10px] font-mono text-muted-foreground mb-2">{r.data} • {r.nesting || "S/N"}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {r.peca.split(" / ").map((item, idx) => {
+                          const match = item.match(/(.+) \(x(\d+)\)/);
+                          if (!match) return <span key={idx} className="text-sm font-bold text-white">{item}</span>;
+                          const [_, name, qty] = match;
+                          return (
+                            <div key={idx} className="flex items-center bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+                              <span className="px-3 py-1.5 text-xs font-bold text-white/90">{name}</span>
+                              <span className="bg-emerald-500/20 text-emerald-400 px-2 py-1.5 text-[10px] font-black border-l border-white/10 min-w-[32px] text-center">
+                                {qty}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                     {isAdmin && (
-                      <button onClick={() => del(r.id)} className="p-2 -mt-2 -mr-2 text-muted-foreground hover:text-destructive">
+                      <button onClick={() => del(r.id)} className="p-2 -mt-2 -mr-2 text-muted-foreground hover:text-destructive shrink-0">
                         <Trash2 size={16} />
                       </button>
                     )}

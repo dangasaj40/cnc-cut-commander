@@ -6,7 +6,7 @@ import {
   PlusCircle, 
   History, 
   Users, 
-  AlertTriangle, 
+  Library, 
   UserCircle,
   LogOut,
   Settings,
@@ -18,7 +18,7 @@ const NAV = [
   { to: "/producao", label: "Corte", icon: PlusCircle, roles: ["admin", "supervisor"] },
   { to: "/historico", label: "Histórico", icon: History, roles: ["admin", "supervisor", "viewer"] },
   { to: "/operadores", label: "Equipe", icon: Users, roles: ["admin", "supervisor"] },
-  { to: "/ocorrencias", label: "Alertas", icon: AlertTriangle, roles: ["admin", "supervisor"] },
+  { to: "/catalogo", label: "Catálogo", icon: Library, roles: ["admin", "supervisor", "viewer"] },
 ] as const;
 
 export function AppShell({ children }: { children?: ReactNode }) {
