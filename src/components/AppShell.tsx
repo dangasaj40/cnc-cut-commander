@@ -29,7 +29,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
   return (
     <div className="min-h-dvh bg-background text-foreground pb-24 md:pb-0 md:pl-20 lg:pl-0 transition-all">
       {/* Header Mobile / Top Bar Desktop */}
-      <header className="sticky top-0 z-40 bg-[#09090b] border-b border-white/10 px-6 py-4 flex items-center justify-between shadow-lg">
+      <header className="sticky top-0 z-50 bg-[#09090b] border-b border-white/10 px-6 py-4 flex items-center justify-between shadow-lg h-16">
         <div className="flex items-center gap-3">
           <div className="size-9 bg-primary/20 rounded-xl flex items-center justify-center border border-primary/30 shadow-[0_0_20px_rgba(251,191,36,0.1)]">
             <div className="size-2.5 bg-primary rounded-full shadow-[0_0_10px_var(--laser)] animate-pulse" />
@@ -130,7 +130,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
 
       {/* Side Navigation (Desktop Only) */}
       {profile?.ativo && roles.length > 0 && (
-        <nav className="fixed left-0 top-0 bottom-0 w-20 hidden md:flex flex-col items-center py-8 glass border-r border-white/5 z-50">
+        <nav className="fixed left-0 top-16 bottom-0 w-20 hidden md:flex flex-col items-center py-8 glass border-r border-white/5 z-40">
           <div className="flex flex-col gap-8 flex-1">
             {NAV.filter(n => n.roles.some(r => roles.includes(r as any))).map((n) => {
               const active = path === n.to || (n.to !== "/" && path.startsWith(n.to));
