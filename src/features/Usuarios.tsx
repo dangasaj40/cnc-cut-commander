@@ -90,7 +90,7 @@ export default function UsuariosPage() {
                 <div className="flex items-center gap-3">
                    <select 
                      onChange={(e) => approve(u, e.target.value as Role)}
-                     className="field py-2 text-[10px] font-bold uppercase tracking-widest min-w-[140px] border-primary/30"
+                     className="field py-2 text-[10px] font-bold uppercase tracking-widest min-w-[140px] border-primary/30 shadow-md"
                    >
                      <option value="">Aprovar como...</option>
                      <option value="viewer">Visualizador</option>
@@ -99,7 +99,7 @@ export default function UsuariosPage() {
                    </select>
                    <button 
                      onClick={() => reject(u.id)}
-                     className="p-3 text-muted-foreground hover:text-destructive bg-white/5 rounded-xl border border-white/10"
+                     className="p-3 text-muted-foreground hover:text-destructive bg-white/5 rounded-xl border border-white/10 shadow-md hover:shadow-lg transition-shadow"
                    >
                      <UserX size={16} />
                    </button>
@@ -142,7 +142,7 @@ export default function UsuariosPage() {
                       <select
                         value={u.roles[0] ?? "viewer"}
                         onChange={(e) => setRole(u.id, e.target.value as Role)}
-                        className="field py-2 text-[10px] font-bold uppercase tracking-widest min-w-[140px] border-white/10"
+                        className="field py-2 text-[10px] font-bold uppercase tracking-widest min-w-[140px] border-white/10 shadow-md hover:shadow-lg transition-shadow"
                       >
                         <option value="admin">Administrador</option>
                         <option value="supervisor">Supervisor</option>
@@ -155,7 +155,7 @@ export default function UsuariosPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <button onClick={() => toggleActive(u)} className="p-2 text-muted-foreground hover:text-destructive transition-colors">
+                      <button onClick={() => toggleActive(u)} className="p-2 text-muted-foreground hover:text-destructive transition-all shadow-sm hover:shadow-md rounded-lg">
                         <UserX size={16} />
                       </button>
                     </td>
@@ -179,14 +179,14 @@ export default function UsuariosPage() {
                       <div className="text-[8px] text-primary font-black uppercase tracking-widest">Acesso Ativo</div>
                     </div>
                   </div>
-                  <button onClick={() => toggleActive(u)} className="p-2.5 rounded-xl border border-white/5 text-muted-foreground hover:text-destructive">
+                  <button onClick={() => toggleActive(u)} className="p-2.5 rounded-xl border border-white/5 text-muted-foreground hover:text-destructive shadow-sm hover:shadow-md transition-all bg-white/5">
                     <UserX size={18} />
                   </button>
                 </div>
                 <select
                   value={u.roles[0] ?? "viewer"}
                   onChange={(e) => setRole(u.id, e.target.value as Role)}
-                  className="field py-4 text-xs font-bold uppercase tracking-widest border-white/10"
+                  className="field py-4 text-xs font-bold uppercase tracking-widest border-white/10 shadow-md hover:shadow-lg transition-shadow"
                 >
                   <option value="admin">Administrador</option>
                   <option value="supervisor">Supervisor</option>

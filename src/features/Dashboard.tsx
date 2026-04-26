@@ -3,16 +3,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Metric } from "@/components/Metric";
 import { startOfDay, startOfWeek, startOfMonth, format, subDays } from "date-fns";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
+import { Link } from "@tanstack/react-router";
 import { 
+  BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
+  AreaChart, Area
+} from "recharts";
+import { 
+  ChevronDown,
   Trophy, 
   Target, 
   Activity, 
-  BarChart3, 
-  TrendingUp, 
-  Package, 
-  Weight, 
-  Layers 
+  Layers,
+  Square,
+  Clock,
+  Calendar,
+  CheckCircle2,
+  Package,
+  ArrowRight
 } from "lucide-react";
 
 type Period = "today" | "week" | "month";
@@ -21,7 +28,6 @@ interface Row {
   data: string;
   quantidade: number;
   peso_total: number | null;
-  tempo_total_segundos: number | null;
   nesting: string | null;
 }
 
@@ -29,6 +35,9 @@ export default function Dashboard() {
   const [period, setPeriod] = useState<Period>("today");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dayNestings, setDayNestings] = useState<any[]>([]);
+  const [nightNestings, setNightNestings] = useState<any[]>([]);
+  const [latestNestings, setLatestNestings] = useState<any[]>([]);
 
   useEffect(() => {
     const since = period === "today" ? startOfDay(new Date())
@@ -37,10 +46,65 @@ export default function Dashboard() {
     setLoading(true);
     supabase
       .from("producao")
-      .select("data,quantidade,peso_total,tempo_total_segundos,nesting")
+      .select("data,quantidade,peso_total,nesting")
       .gte("data", format(since, "yyyy-MM-dd"))
       .then(({ data }) => { setRows((data ?? []) as Row[]); setLoading(false); });
   }, [period]);
+
+  useEffect(() => {
+    const today = format(startOfDay(new Date()), "yyyy-MM-dd");
+    const week = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+    const month = format(startOfMonth(new Date()), "yyyy-MM-dd");
+
+    // Estatísticas e lista de nestings por turno hoje
+    supabase
+      .from("producao")
+      .select("data,hora_inicio,nesting,versao,data_importacao")
+      .gte("data", today)
+      .then(({ data }) => {
+        const d = data || [];
+        
+        const day: any[] = [];
+        const night: any[] = [];
+        
+        // Filtra únicos por turno
+        d.forEach(r => {
+          if (!r.nesting || !r.hora_inicio) return;
+          
+          // Extrai a hora do timestamp (ex: 2024-04-26T14:30:00)
+          const timePart = r.hora_inicio.includes("T") ? r.hora_inicio.split("T")[1] : r.hora_inicio;
+          const h = parseInt(timePart.split(":")[0]);
+          const isDay = h >= 7 && h < 18;
+          
+          if (isDay) {
+            if (!day.find(item => item.nesting === r.nesting)) day.push({ ...r, hora: timePart });
+          } else {
+            if (!night.find(item => item.nesting === r.nesting)) night.push({ ...r, hora: timePart });
+          }
+        });
+
+        setDayNestings(day);
+        setNightNestings(night);
+      });
+
+    // Últimos nestings carregados no Catálogo
+    supabase
+      .from("catalogo_pecas")
+      .select("nesting,versao,data_importacao")
+      .order("data_importacao", { ascending: false })
+      .limit(20)
+      .then(({ data }) => {
+        const d = data || [];
+        // Filtra únicos pelo nome do nesting
+        const unique = d.reduce((acc: any[], current) => {
+          if (!acc.find(item => item.nesting === current.nesting)) {
+            acc.push(current);
+          }
+          return acc;
+        }, []);
+        setLatestNestings(unique.slice(0, 6));
+      });
+  }, []);
 
   const totals = useMemo(() => {
     const pieces = rows.reduce((s, r) => s + (r.quantidade || 0), 0);
@@ -51,30 +115,40 @@ export default function Dashboard() {
 
   const chartData = useMemo(() => {
     const days = 7;
-    const map: Record<string, number> = {};
+    const map: Record<string, { kg: number, pieces: number, nestings: number }> = {};
     for (let i = days - 1; i >= 0; i--) {
       const d = format(subDays(new Date(), i), "yyyy-MM-dd");
-      map[d] = 0;
+      map[d] = { kg: 0, pieces: 0, nestings: 0 };
     }
     rows.forEach((r) => {
-      if (map[r.data] !== undefined) map[r.data] += Number(r.peso_total || 0);
+      if (map[r.data]) {
+        map[r.data].kg += Number(r.peso_total || 0);
+        map[r.data].pieces += Number(r.quantidade || 0);
+        map[r.data].nestings += r.nesting ? 1 : 0;
+      }
     });
-    return Object.entries(map).map(([d, kg]) => ({ day: format(new Date(d + "T00:00:00"), "dd/MM"), kg: Math.round(kg) }));
+    return Object.entries(map).map(([d, data]) => ({ 
+      day: format(new Date(d + "T00:00:00"), "dd/MM"), 
+      kg: Math.round(data.kg),
+      pieces: data.pieces,
+      nestings: data.nestings
+    }));
   }, [rows]);
+
   return (
     <div className="flex flex-col gap-6">
       <SectionHeader
         code="DSH-01"
-        title="Dashboard"
-        subtitle="Métricas de Produção"
+        title="Análise de Produção"
         right={
-          <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5">
+          <div className="flex gap-1">
             {(["today", "week", "month"] as const).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
-                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all ${
-                  period === p ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-muted-foreground hover:text-white"
+                style={period === p ? { background: "#4F46E5", color: "#FFFFFF" } : {}}
+                className={`px-4 py-2 text-xs font-semibold capitalize rounded-full transition-all ${
+                  period === p ? "shadow-md" : "text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9]"
                 }`}
               >
                 {p === "today" ? "Hoje" : p === "week" ? "Semana" : "Mês"}
@@ -84,110 +158,192 @@ export default function Dashboard() {
         }
       />
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      {/* Top 3 Large Cards */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Metric 
           label="Peças Cortadas" 
-          value={loading ? "—" : totals.pieces.toLocaleString("pt-BR")} 
-          unit="PCS" 
-          icon={<Package size={20} />}
-        />
+          value={loading ? "—" : totals.pieces} 
+          icon={<Square size={14} className="text-[#94A3B8]" />}
+          badge="ON TRACK"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="colorPieces" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <Area type="monotone" dataKey="pieces" stroke="#4F46E5" strokeWidth={3} fillOpacity={1} fill="url(#colorPieces)" isAnimationActive={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Metric>
+
         <Metric 
-          label="Massa Total" 
-          value={loading ? "—" : totals.kg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} 
-          unit="KG" 
-          highlight 
-          hint={`${(totals.kg / 1000).toFixed(2)} t`}
-          icon={<Weight size={20} />}
-        />
+          label="Produção" 
+          value={loading ? "—" : Math.round(totals.kg)} 
+          unit="KG"
+          hint={loading ? "" : `${(totals.kg / 1000).toFixed(2)} Toneladas`}
+          icon={<Square size={14} className="text-[#94A3B8]" />}
+          badge="EXCELENTE"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="colorKg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#A3E635" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#A3E635" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <Area type="monotone" dataKey="kg" stroke="#A3E635" strokeWidth={3} fillOpacity={1} fill="url(#colorKg)" isAnimationActive={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Metric>
+
         <Metric 
-          label="Nestings Únicos" 
-          value={loading ? "—" : totals.nestings.toString()} 
-          unit="UN" 
-          icon={<Layers size={20} />}
-        />
+          label="Planos (Nestings)" 
+          value={loading ? "—" : totals.nestings} 
+          icon={<Square size={14} className="text-[#94A3B8]" />}
+          badge="ESTÁVEL"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+              <Bar dataKey="nestings" fill="#4F46E5" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="pieces" fill="#A3E635" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Metric>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass-card p-6">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center gap-3">
-              <BarChart3 className="text-primary" size={20} />
-              <h2 className="text-xs font-bold uppercase tracking-widest text-white">Produção (KG)</h2>
-            </div>
-            <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full">T-7D → Hoje</span>
-          </div>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <defs>
-                  <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--laser)" stopOpacity={1} />
-                    <stop offset="100%" stopColor="var(--laser)" stopOpacity={0.3} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" vertical={false} />
-                <XAxis 
-                  dataKey="day" 
-                  stroke="rgba(255,255,255,0.3)" 
-                  tick={{ fontSize: 10, fontFamily: "JetBrains Mono" }} 
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis 
-                  stroke="rgba(255,255,255,0.3)" 
-                  tick={{ fontSize: 10, fontFamily: "JetBrains Mono" }} 
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  contentStyle={{ background: "rgba(24, 24, 27, 0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", fontSize: 11, fontFamily: "JetBrains Mono" }}
-                  cursor={{ fill: "rgba(0, 210, 255, 0.05)" }}
-                />
-                <Bar dataKey="kg" fill="url(#barGradient)" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      {/* Bottom Row - Novos Cards */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* Turno do Dia */}
+        <NestingListCard 
+          title="Turno do Dia" 
+          nestings={dayNestings} 
+          icon={<Layers size={16} className="text-[#4F46E5]" />}
+          delay="100ms"
+        />
 
-        <div className="glass-card p-6 flex flex-col">
-          <div className="flex items-center gap-3 mb-6">
-            <Activity className="text-primary" size={20} />
-            <h2 className="text-xs font-bold uppercase tracking-widest text-white">Eficiência</h2>
+        {/* Turno da Noite */}
+        <NestingListCard 
+          title="Turno da Noite" 
+          nestings={nightNestings} 
+          icon={<Clock size={16} className="text-[#A3E635]" />}
+          delay="200ms"
+        />
+
+        {/* Últimos Lançamentos (Catálogo) */}
+        <div className="glass-card p-0 overflow-hidden flex flex-col animate-slide-up" style={{ animationDelay: "300ms" }}>
+          <div className="p-6 pb-3 border-b border-[#E2E8F0]">
+            <span className="text-sm font-semibold text-[#0F172A] flex items-center gap-2">
+               <Package size={16} className="text-[#94A3B8]" /> Últimos Nestings Carregados
+            </span>
           </div>
           
-          <div className="space-y-4 flex-1">
-             <SummaryItem icon={<Trophy size={16}/>} label="Total (Toneladas)" value={`${(totals.kg / 1000).toFixed(2)} t`} />
-             <SummaryItem icon={<Target size={16}/>} label="Peças Processadas" value={`${totals.pieces} pcs`} />
-             <SummaryItem icon={<Layers size={16}/>} label="Nestings Únicos" value={totals.nestings.toString()} />
-             <SummaryItem icon={<TrendingUp size={16}/>} label="Lançamentos" value={rows.length.toString()} />
+          <div className="divide-y divide-[#F1F5F9] max-h-[220px] overflow-y-auto custom-scrollbar">
+            {latestNestings.length === 0 ? (
+              <div className="p-6 text-center text-sm text-[#94A3B8]">Nenhum nesting carregado.</div>
+            ) : (
+              latestNestings.map((n, i) => (
+                <div key={i} className="p-4 px-6 flex items-center justify-between hover:bg-[#F8FAFC] transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="size-8 rounded-full bg-[#E0E7FF] text-[#4F46E5] flex items-center justify-center">
+                      <Layers size={14} />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-[#0F172A]">{n.nesting}</div>
+                      <div className="text-[10px] font-medium text-[#64748B] uppercase tracking-wider flex items-center gap-1 mt-0.5">
+                        <Calendar size={10} /> {n.data_importacao ? format(new Date(n.data_importacao), "dd/MM/yy") : "--/--"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="bg-[#E0E7FF] text-[#4F46E5] text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-tighter">
+                      V{n.versao || 1}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-
-          <div className="mt-6 pt-6 border-t border-white/5">
-             <div className="bg-primary/10 border border-primary/20 p-4 rounded-2xl flex items-center gap-3">
-                <div className="size-2 bg-primary rounded-full shadow-[0_0_8px_var(--laser)] animate-pulse" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-primary">Sistema Sincronizado</span>
-             </div>
-          </div>
+          <Link 
+            to="/configuracoes" 
+            search={{ tab: "catalogo" }}
+            className="p-3 bg-[#F1F5F9] border-t border-[#E2E8F0] text-center hover:bg-slate-200 transition-colors cursor-pointer block"
+          >
+             <span className="text-[10px] font-black text-[#64748B] uppercase tracking-widest flex items-center justify-center gap-2">
+                Ver Todos no Catálogo <ArrowRight size={12} />
+             </span>
+          </Link>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-function SummaryItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function SummaryRow({ label, value, highlight }: { label: string; value: string, highlight?: boolean }) {
   return (
-    <div className="flex items-center justify-between group">
-      <div className="flex items-center gap-3">
-        <div className="size-8 bg-white/5 rounded-lg flex items-center justify-center text-muted-foreground group-hover:text-primary transition-colors">
-          {icon}
-        </div>
-        <span className="text-[11px] text-muted-foreground uppercase tracking-widest font-medium">{label}</span>
-      </div>
-      <span className="text-xs font-bold tabular-nums text-white">{value}</span>
+    <div className="flex items-center justify-between">
+      <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wide">{label}</span>
+      <span className={`text-sm font-bold ${highlight ? "text-[#84CC16]" : "text-[#0F172A]"}`}>
+        {value}
+      </span>
     </div>
   );
 }
 
-export function fmtDuration(sec: number) {
-  return "N/A";
+function NestingListCard({ title, nestings, icon, delay }: { title: string, nestings: any[], icon: React.ReactNode, delay: string }) {
+  return (
+    <div className="glass-card p-0 flex flex-col min-h-[220px] animate-slide-up overflow-hidden" style={{ animationDelay: delay }}>
+      <div className="p-6 pb-3 border-b border-[#E2E8F0]">
+        <span className="text-sm font-semibold text-[#0F172A] flex items-center gap-2">
+           {icon} {title}
+        </span>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto max-h-[200px] custom-scrollbar p-2">
+         {nestings.length === 0 ? (
+           <div className="p-8 text-center text-xs text-[#94A3B8] uppercase tracking-widest font-bold opacity-50">Sem registros neste turno</div>
+         ) : (
+           <div className="flex flex-col gap-1">
+             {nestings.map((n, i) => (
+               <div key={i} className="flex items-center justify-between p-3 px-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] hover:border-primary/30 transition-all group">
+                  <div className="flex items-center gap-3">
+                    <span className="size-6 rounded-lg bg-primary/10 text-primary text-[10px] font-black flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
+                      {i + 1}
+                    </span>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-[#0F172A] tracking-tight">{n.nesting}</span>
+                      <div className="text-[9px] font-bold text-[#94A3B8] uppercase tracking-widest flex items-center gap-2">
+                         {n.data_importacao && (
+                           <span className="flex items-center gap-1">
+                             <Calendar size={10} /> {format(new Date(n.data_importacao), "dd/MM/yy")}
+                           </span>
+                         )}
+                         {n.hora && (
+                           <span className="flex items-center gap-1 border-l border-slate-200 pl-2">
+                             <Clock size={10} /> {n.hora.substring(0,5)}
+                           </span>
+                         )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {n.versao && (
+                    <div className="bg-[#E0E7FF] text-[#4F46E5] text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-tighter">
+                      V{n.versao}
+                    </div>
+                  )}
+               </div>
+             ))}
+           </div>
+         )}
+      </div>
+      <div className="p-3 bg-[#F1F5F9] border-t border-[#E2E8F0] text-center">
+         <span className="text-[10px] font-black text-primary uppercase tracking-widest">Total: {nestings.length} Nestings</span>
+      </div>
+    </div>
+  );
 }

@@ -11,7 +11,8 @@ import {
   Save, 
   XCircle,
   Hash,
-  Contact
+  Contact,
+  Trash2
 } from "lucide-react";
 
 interface Op { id: string; nome: string; matricula: string | null; ativo: boolean; }
@@ -61,6 +62,16 @@ export default function OperadoresPage() {
   const toggle = async (id: string, ativo: boolean) => {
     if (!isSupervisor) return;
     await supabase.from("operadores").update({ ativo: !ativo }).eq("id", id);
+    load();
+  };
+
+  const remove = async (id: string, nomeOp: string) => {
+    if (!isSupervisor) return;
+    if (!window.confirm(`Tem certeza que deseja apagar o operador ${nomeOp}? Essa ação não pode ser desfeita.`)) return;
+    
+    setBusy(true);
+    await supabase.from("operadores").delete().eq("id", id);
+    setBusy(false);
     load();
   };
 
@@ -136,11 +147,14 @@ export default function OperadoresPage() {
 
                 {isSupervisor && (
                   <div className="flex items-center gap-2">
-                    <button onClick={() => startEdit(o)} className="p-2.5 text-muted-foreground hover:text-primary transition-colors bg-white/5 rounded-lg border border-white/5">
+                    <button onClick={() => startEdit(o)} className="p-2.5 text-muted-foreground hover:text-primary transition-colors bg-white/5 rounded-lg border border-white/5" title="Editar">
                       <Edit3 size={16} />
                     </button>
-                    <button onClick={() => toggle(o.id, o.ativo)} className={`p-2.5 rounded-lg border transition-all ${o.ativo ? "text-muted-foreground hover:text-destructive bg-white/5 border-white/5" : "text-primary bg-primary/10 border-primary/20"}`}>
+                    <button onClick={() => toggle(o.id, o.ativo)} className={`p-2.5 rounded-lg border transition-all ${o.ativo ? "text-muted-foreground hover:text-destructive bg-white/5 border-white/5" : "text-primary bg-primary/10 border-primary/20"}`} title={o.ativo ? "Desativar" : "Ativar"}>
                       {o.ativo ? <UserX size={16} /> : <UserCheck size={16} />}
+                    </button>
+                    <button onClick={() => remove(o.id, o.nome)} className="p-2.5 text-muted-foreground hover:text-destructive transition-colors bg-white/5 rounded-lg border border-white/5" title="Apagar">
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 )}

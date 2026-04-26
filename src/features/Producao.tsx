@@ -27,7 +27,7 @@ interface CatalogoItem {
 }
 
 interface FormState {
-  peca: string; nesting: string; painel: string; balsa: string;
+  peca: string; nesting: string; balsa: string; versao?: number;
   balsa_numero: string;
   operador_id: string; quantidade: number; peso_unitario: string;
   observacoes: string; avulsa: boolean;
@@ -35,7 +35,7 @@ interface FormState {
 }
 
 const empty: FormState = {
-  peca: "", nesting: "", painel: "", balsa: "",
+  peca: "", nesting: "", balsa: "",
   balsa_numero: "",
   operador_id: "", quantidade: 1, peso_unitario: "",
   observacoes: "", avulsa: false,
@@ -52,7 +52,7 @@ export default function ProducaoPage() {
   const [last, setLast] = useState<FormState | null>(null);
 
   // Estados do catálogo
-  const [nestings, setNestings] = useState<string[]>([]);
+  const [nestings, setNestings] = useState<{id: string, versao: number, data: string}[]>([]);
   const [pecasNoNesting, setPecasNoNesting] = useState<CatalogoItem[]>([]);
   const [loadingCatalogo, setLoadingCatalogo] = useState(false);
 
@@ -60,12 +60,37 @@ export default function ProducaoPage() {
     supabase.from("operadores").select("id,nome").eq("ativo", true).order("nome")
       .then(({ data }) => setOperadores((data ?? []) as Operador[]));
 
-    // Carregar Nestings únicos do catálogo
-    supabase.from("catalogo_pecas").select("nesting")
-      .then(({ data }) => {
-        const unique = Array.from(new Set((data ?? []).map(d => d.nesting))).sort();
-        setNestings(unique);
+    // Carregar Nestings únicos do catálogo com versão (e fallback)
+    supabase.from("catalogo_pecas").select("nesting, versao, data_importacao")
+      .then(({ data, error }) => {
+        let finalData = data;
+        
+        if (error) {
+          console.warn("Colunas de versão ausentes na produção, usando busca básica...");
+          supabase.from("catalogo_pecas").select("nesting")
+            .then(({ data: basicData }) => {
+              processNestings(basicData || []);
+            });
+          return;
+        }
+        
+        processNestings(data || []);
       });
+
+    const processNestings = (data: any[]) => {
+      const uniqueMap = new Map();
+      data.forEach(d => {
+        if (!uniqueMap.has(d.nesting)) {
+          uniqueMap.set(d.nesting, { 
+            id: d.nesting, 
+            versao: d.versao || 1, 
+            data: d.data_importacao ? new Date(d.data_importacao).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : ""
+          });
+        }
+      });
+      const sorted = Array.from(uniqueMap.values()).sort((a, b) => a.id.localeCompare(b.id));
+      setNestings(sorted);
+    };
   }, []);
 
   const update = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -146,9 +171,13 @@ export default function ProducaoPage() {
     e.preventDefault();
     if (!isSupervisor) { setMsg("Sem permissão para registrar."); return; }
     setBusy(true); setMsg(null);
+    const nestMeta = nestings.find(n => n.id === form.nesting);
+    
     const payload = {
       peca: form.peca,
       nesting: form.nesting || null,
+      versao: nestMeta?.versao || null,
+      data_importacao: nestMeta?.data ? new Date().toISOString() : null,
       painel: form.painel || null,
       balsa: `${form.balsa} ${form.balsa_numero}`.trim() || null,
       operador_id: form.operador_id || null,
@@ -156,13 +185,22 @@ export default function ProducaoPage() {
       peso_unitario: pesoUnit || null,
       peso_total: pesoTotal || null,
       data: form.data,
-      hora_inicio: `${form.data}T${form.hora}:00`,
+      hora_inicio: new Date(`${form.data}T${form.hora}:00`).toISOString(),
       observacoes: form.observacoes || null,
       avulsa: form.avulsa,
       criado_por: user?.id,
       atualizado_por: user?.id,
     };
-    const { error } = await supabase.from("producao").insert(payload);
+    let { error } = await supabase.from("producao").insert(payload);
+
+    // Fallback: Se falhar por colunas ausentes, tenta salvar sem versão/data
+    if (error && (error.message?.includes("versao") || error.message?.includes("data_importacao"))) {
+      console.warn("Falha ao salvar versão, tentando salvamento simplificado...");
+      const { versao, data_importacao, ...basicPayload } = payload;
+      const { error: basicError } = await supabase.from("producao").insert(basicPayload);
+      error = basicError;
+    }
+
     setBusy(false);
     if (error) { setMsg(error.message); return; }
     setMsg("Lançamento registrado.");
@@ -201,7 +239,11 @@ export default function ProducaoPage() {
             <Field label="Nesting" icon={<Layers size={16}/>}>
               <select className="field" value={form.nesting} onChange={(e) => onNestingChange(e.target.value)}>
                 <option value="">— Selecionar Nesting —</option>
-                {nestings.map(n => <option key={n} value={n}>{n}</option>)}
+                {nestings.map(n => (
+                  <option key={n.id} value={n.id}>
+                    {n.id} (V{n.versao} - {n.data})
+                  </option>
+                ))}
               </select>
             </Field>
 
@@ -234,9 +276,9 @@ export default function ProducaoPage() {
                         if (!match) return <span key={idx} className="badge-item">{item}</span>;
                         const [_, name, qty] = match;
                         return (
-                          <div key={idx} className="flex items-center bg-white/5 border border-white/10 rounded-lg overflow-hidden transition-all hover:border-emerald-500/30 group">
-                            <span className="px-3 py-1.5 text-[11px] font-medium text-white/90 group-hover:text-white">{name}</span>
-                            <span className="bg-emerald-500/20 text-emerald-400 px-2 py-1.5 text-[10px] font-black border-l border-white/10 min-w-[32px] text-center">
+                          <div key={idx} className="flex items-center bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg overflow-hidden transition-all hover:border-[#4F46E5]/30 group">
+                            <span className="px-3 py-1.5 text-[11px] font-semibold text-[#64748B] group-hover:text-[#4F46E5] transition-colors">{name}</span>
+                            <span className="bg-[#A3E635] text-[#0F172A] px-2 py-1.5 text-[10px] font-black border-l border-[#E2E8F0] min-w-[32px] text-center">
                               {qty}
                             </span>
                           </div>
@@ -324,8 +366,8 @@ export default function ProducaoPage() {
 function Field({ label, icon, children, className = "" }: { label: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <label className={`flex flex-col gap-2 ${className}`}>
-      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-white/70 px-1">
-        {icon && <span className="text-primary">{icon}</span>}
+      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#4F46E5] px-1">
+        {icon && <span>{icon}</span>}
         {label}
       </div>
       {children}

@@ -6,28 +6,28 @@ interface Props {
   subtitle?: string;
   right?: ReactNode;
 }
+
 export function SectionHeader({ code, title, subtitle, right }: Props) {
   return (
-    <div className="flex flex-col gap-4 mb-8">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-bold tracking-widest uppercase">
+    <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="bg-[#F1F5F9] text-[#64748B] font-mono text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#E2E8F0]">
             {code}
-          </div>
+          </span>
           {subtitle && (
-            <span className="text-[10px] text-white/60 uppercase tracking-widest">
-              • {subtitle}
-            </span>
+            <p className="text-[11px] text-[#94A3B8] font-medium tracking-wide">
+              {subtitle}
+            </p>
           )}
         </div>
-        {right && <div className="animate-in fade-in slide-in-from-right-4 duration-500">{right}</div>}
-      </div>
-      
-      <div>
-        <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-br from-white to-white/60 bg-clip-text text-transparent uppercase">
+        
+        <h1 className="text-2xl font-bold text-[#0F172A] tracking-tight">
           {title}
         </h1>
       </div>
+
+      {right && <div className="flex items-center gap-2 bg-[#FFFFFF] p-1.5 rounded-full shadow-sm border border-[#E2E8F0]">{right}</div>}
     </div>
   );
 }

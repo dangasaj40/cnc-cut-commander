@@ -7,10 +7,10 @@ import {
   History, 
   Users, 
   Library, 
-  UserCircle,
   LogOut,
   Settings,
-  ShieldAlert
+  ShieldAlert,
+  Cpu
 } from "lucide-react";
 
 const NAV = [
@@ -27,74 +27,145 @@ export function AppShell({ children }: { children?: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <div className="min-h-dvh bg-background text-foreground pb-24 md:pb-0 md:pl-20 lg:pl-0 transition-all">
-      {/* Header Mobile / Top Bar Desktop */}
-      <header className="sticky top-0 z-50 bg-[#09090b] border-b border-white/10 px-6 py-4 flex items-center justify-between shadow-lg h-16">
-        <div className="flex items-center gap-3">
-          <div className="size-9 bg-primary/20 rounded-xl flex items-center justify-center border border-primary/30 shadow-[0_0_20px_rgba(251,191,36,0.1)]">
-            <div className="size-2.5 bg-primary rounded-full shadow-[0_0_10px_var(--laser)] animate-pulse" />
-          </div>
-          <div>
-            <h1 className="text-sm font-black tracking-tight leading-none text-white">CNC COMMANDER</h1>
-            <p className="text-[10px] text-primary uppercase tracking-[0.2em] font-bold mt-1.5 flex items-center gap-1.5">
-              <span className="size-1 bg-primary rounded-full" />
-              SISTEMA ATIVO
-            </p>
-          </div>
-        </div>
+    <div className="min-h-dvh bg-[#F1F5F9] text-[#0F172A] flex flex-col">
 
+      {/* ─── BODY (Sidebar + Content) ─── */}
+      <div className="flex flex-1 overflow-hidden bg-[#F1F5F9]">
+
+        {/* ─── SIDEBAR DESKTOP ─── */}
         {profile?.ativo && roles.length > 0 && (
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex flex-col items-end">
-              <span className="text-[11px] font-bold uppercase">{profile?.nome || "Operador"}</span>
-              <span className="text-[9px] text-primary uppercase tracking-widest">{roles[0] || "Acesso"}</span>
+          <aside
+            style={{ background: "#1E293B", borderRight: "none", width: "240px" }}
+            className="hidden md:flex flex-col shrink-0 py-6 px-4"
+          >
+            {/* Logo / Brand */}
+            <div className="flex items-center gap-3 px-2 mb-8">
+              <div
+                style={{ background: "rgba(163,230,53,0.15)", border: "1px solid rgba(163,230,53,0.3)" }}
+                className="size-8 rounded-lg flex items-center justify-center"
+              >
+                <Cpu size={16} className="text-[#A3E635]" />
+              </div>
+              <div>
+                <h1 className="text-sm font-bold text-white tracking-tight">CNC SaaS</h1>
+              </div>
             </div>
-            <button 
-              onClick={async () => { await signOut(); router.navigate({ to: "/login" }); }}
-              className="p-2.5 bg-white/5 rounded-xl border border-white/5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
-        )}
-      </header>
+            {/* Nav Links */}
+            <div className="flex flex-col gap-0.5 flex-1">
+              {/* Section label */}
+              <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-2 mt-1">
+                Navegação
+              </p>
 
-      {/* Main Content */}
-      <main className="max-w-[1200px] mx-auto p-5 md:p-8 animate-slide-up">
-        {loading ? (
-          <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
-             <div className="size-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-             <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-primary">Sincronizando...</span>
-          </div>
-        ) : (!profile || profile.ativo !== true || roles.length === 0) ? (
-          <div className="min-h-[70vh] flex flex-col items-center justify-center text-center px-6">
-            <div className="size-24 bg-primary/10 rounded-3xl flex items-center justify-center border border-primary/20 shadow-[0_0_50px_rgba(251,191,36,0.1)] mb-8 animate-pulse">
-              <ShieldAlert size={48} className="text-primary" />
-            </div>
-            <h2 className="text-2xl font-black tracking-tighter uppercase mb-3">Acesso Pendente</h2>
-            <p className="text-xs text-muted-foreground uppercase tracking-widest leading-relaxed max-w-sm mb-8">
-              Sua conta foi criada com sucesso, mas ainda precisa ser **autorizada por um administrador** antes que você possa visualizar os dados de produção.
-            </p>
-            <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center gap-3">
-              <div className="size-2 bg-primary rounded-full animate-ping" />
-              <span className="text-[10px] font-bold uppercase tracking-widest">Aguardando aprovação do sistema...</span>
-            </div>
-            <button 
-              onClick={() => signOut()}
-              className="mt-12 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"
-            >
-              <LogOut size={14} /> Sair da conta
-            </button>
-          </div>
-        ) : (
-          children ?? <Outlet />
-        )}
-      </main>
+              {NAV.filter(n => n.roles.some(r => roles.includes(r as any))).map((n) => {
+                const active = path === n.to || (n.to !== "/" && path.startsWith(n.to));
+                const Icon = n.icon;
+                return (
+                  <Link
+                    key={n.to}
+                    to={n.to}
+                    style={active ? {
+                      background: "rgba(163,230,53,0.15)",
+                      color: "#A3E635",
+                    } : {}}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      active ? "shadow-sm" : "text-[#94A3B8] hover:text-[#FFFFFF] hover:bg-white/[0.05]"
+                    }`}
+                  >
+                    <Icon size={18} strokeWidth={active ? 2.5 : 2} className={active ? "text-[#A3E635]" : ""} />
+                    <span>{n.label}</span>
+                  </Link>
+                );
+              })}
 
-      {/* Bottom Navigation (Mobile Only) */}
+              {isAdmin && (
+                <>
+                  <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-2 mt-4">
+                    Sistema
+                  </p>
+                  <Link
+                    to="/configuracoes"
+                    style={path.startsWith("/configuracoes") ? {
+                      background: "rgba(163,230,53,0.15)",
+                      color: "#A3E635",
+                    } : {}}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      path.startsWith("/configuracoes") ? "shadow-sm" : "text-[#94A3B8] hover:text-[#FFFFFF] hover:bg-white/[0.05]"
+                    }`}
+                  >
+                    <Settings size={18} strokeWidth={path.startsWith("/configuracoes") ? 2.5 : 2} className={path.startsWith("/configuracoes") ? "text-[#A3E635]" : ""} />
+                    <span>Ajustes</span>
+                  </Link>
+                </>
+              )}
+            </div>
+
+            {/* Footer sidebar */}
+            <div className="pt-4 mt-4 flex items-center justify-between px-2">
+              <div className="flex flex-col">
+                <span className="text-xs font-semibold text-white">{profile?.nome || "Operador"}</span>
+                <span className="text-[10px] text-[#A1A1AA] uppercase tracking-wider">{roles[0] || "Acesso"}</span>
+              </div>
+              <button
+                onClick={async () => { await signOut(); router.navigate({ to: "/login" }); }}
+                className="p-2 rounded-lg text-[#A1A1AA] hover:text-red-400 hover:bg-red-400/10 transition-all"
+                title="Sair"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          </aside>
+        )}
+
+        {/* ─── MAIN CONTENT ─── */}
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-6">
+          <div className="max-w-[1100px] mx-auto px-5 py-6 animate-slide-up">
+            {loading ? (
+              <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+                <div style={{ borderColor: "#1E2D45", borderTopColor: "#2563EB" }}
+                     className="size-8 border-2 rounded-full animate-spin" />
+                <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  Carregando...
+                </span>
+              </div>
+            ) : (!profile || profile.ativo !== true || roles.length === 0) ? (
+              <div className="min-h-[70vh] flex flex-col items-center justify-center text-center px-6">
+                <div style={{ background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}
+                     className="size-20 rounded-lg flex items-center justify-center mb-6">
+                  <ShieldAlert size={40} className="text-blue-400" />
+                </div>
+                <h2 className="text-xl font-bold tracking-tight mb-2">Acesso Pendente</h2>
+                <p className="text-sm text-slate-500 max-w-sm mb-8 leading-relaxed">
+                  Sua conta foi criada, mas ainda precisa ser autorizada por um administrador antes de visualizar os dados de produção.
+                </p>
+                <div style={{ background: "#111927", border: "1px solid #1E2D45" }}
+                     className="px-4 py-3 rounded flex items-center gap-3 mb-8">
+                  <div className="size-2 bg-blue-400 rounded-full animate-pulse" />
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    Aguardando aprovação do sistema
+                  </span>
+                </div>
+                <button
+                  onClick={() => signOut()}
+                  className="text-xs font-semibold uppercase tracking-widest text-slate-600 hover:text-red-400 transition-colors flex items-center gap-2"
+                >
+                  <LogOut size={14} /> Sair da conta
+                </button>
+              </div>
+            ) : (
+              children ?? <Outlet />
+            )}
+          </div>
+        </main>
+      </div>
+
+      {/* ─── BOTTOM NAV MOBILE ─── */}
       {profile?.ativo && roles.length > 0 && (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#09090b] border-t border-white/10 md:hidden px-4 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-          <div className="flex items-center justify-around py-3">
+        <nav
+          style={{ background: "#1E293B", borderTop: "1px solid #334155" }}
+          className="fixed bottom-0 left-0 right-0 z-50 md:hidden px-2 pb-safe shadow-[0_-4px_10px_rgba(0,0,0,0.15)]"
+        >
+          <div className="flex items-center justify-around py-2">
             {NAV.filter(n => n.roles.some(r => roles.includes(r as any))).map((n) => {
               const active = path === n.to || (n.to !== "/" && path.startsWith(n.to));
               const Icon = n.icon;
@@ -102,57 +173,32 @@ export function AppShell({ children }: { children?: ReactNode }) {
                 <Link
                   key={n.to}
                   to={n.to}
-                  className={`nav-item flex flex-col items-center gap-1.5 min-w-[56px] transition-all ${
-                    active ? "text-primary scale-110" : "text-muted-foreground"
-                  }`}
+                  className="flex flex-col items-center gap-1 min-w-[52px] py-1.5 transition-all"
+                  style={{ color: active ? "#A3E635" : "#94A3B8" }}
                 >
-                  <Icon size={20} strokeWidth={active ? 2.5 : 2} />
-                  <span className="text-[8px] font-bold uppercase tracking-tight">{n.label}</span>
-                  {active && <div className="size-1 bg-primary rounded-full shadow-[0_0_5px_var(--laser)] mt-0.5" />}
+                  <Icon size={20} strokeWidth={active ? 2.5 : 2} className={active ? "text-[#A3E635]" : ""} />
+                  <span className="text-[9px] font-semibold tracking-tight">{n.label}</span>
                 </Link>
               );
             })}
             {isAdmin && (
               <Link
                 to="/configuracoes"
-                className={`nav-item flex flex-col items-center gap-1.5 min-w-[56px] transition-all ${
-                  path.startsWith("/configuracoes") ? "text-primary scale-110" : "text-muted-foreground"
-                }`}
+                className="flex flex-col items-center gap-1 min-w-[52px] py-1.5 transition-all"
+                style={{ color: path.startsWith("/configuracoes") ? "#A3E635" : "#94A3B8" }}
               >
-                <Settings size={20} strokeWidth={path.startsWith("/configuracoes") ? 2.5 : 2} />
-                <span className="text-[8px] font-bold uppercase tracking-tight">Ajustes</span>
-                {path.startsWith("/configuracoes") && <div className="size-1 bg-primary rounded-full shadow-[0_0_5px_var(--laser)] mt-0.5" />}
+                <Settings size={20} strokeWidth={path.startsWith("/configuracoes") ? 2.5 : 2} className={path.startsWith("/configuracoes") ? "text-[#A3E635]" : ""} />
+                <span className="text-[9px] font-semibold tracking-tight">Ajustes</span>
               </Link>
             )}
+            <button
+              onClick={async () => { await signOut(); router.navigate({ to: "/login" }); }}
+              className="flex flex-col items-center gap-1 min-w-[52px] py-1.5 transition-all text-[#94A3B8] hover:text-red-400"
+            >
+              <LogOut size={20} strokeWidth={2} />
+              <span className="text-[9px] font-semibold tracking-tight">Sair</span>
+            </button>
           </div>
-        </nav>
-      )}
-
-      {/* Side Navigation (Desktop Only) */}
-      {profile?.ativo && roles.length > 0 && (
-        <nav className="fixed left-0 top-16 bottom-0 w-20 hidden md:flex flex-col items-center py-8 glass border-r border-white/5 z-40">
-          <div className="flex flex-col gap-8 flex-1">
-            {NAV.filter(n => n.roles.some(r => roles.includes(r as any))).map((n) => {
-              const active = path === n.to || (n.to !== "/" && path.startsWith(n.to));
-              const Icon = n.icon;
-              return (
-                <Link
-                  key={n.to}
-                  to={n.to}
-                  className={`p-3 rounded-2xl transition-all ${
-                    active ? "bg-primary text-black shadow-lg shadow-primary/30" : "text-muted-foreground hover:bg-white/5"
-                  }`}
-                >
-                  <Icon size={24} />
-                </Link>
-              );
-            })}
-          </div>
-           {isAdmin && (
-             <Link to="/configuracoes" className={`p-3 rounded-2xl transition-all ${path.startsWith("/configuracoes") ? "bg-primary text-black shadow-lg shadow-primary/30" : "text-muted-foreground hover:bg-white/5"}`}>
-                <Settings size={24} />
-             </Link>
-           )}
         </nav>
       )}
     </div>

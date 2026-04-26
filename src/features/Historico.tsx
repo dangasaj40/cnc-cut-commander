@@ -11,14 +11,16 @@ import {
   FileText, 
   Filter,
   Trash2,
-  ChevronRight
+  ChevronRight,
+  Clock
 } from "lucide-react";
 
 interface Row {
   id: string;
   peca: string;
   nesting: string | null;
-  painel: string | null;
+  versao: number | null;
+  data_importacao: string | null;
   balsa: string | null;
   quantidade: number;
   peso_total: number | null;
@@ -34,19 +36,58 @@ export default function HistoricoPage() {
   const { isAdmin } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ from: "", to: "", peca: "", nesting: "" });
+  const [filters, setFilters] = useState({ from: "", to: "", peca: "", nesting: "", turno: "" });
 
   const load = async () => {
-    setLoading(true);
-    let q = supabase.from("producao").select("*, operador:operadores(nome)").order("data", { ascending: false }).order("created_at", { ascending: false }).limit(500);
-    if (filters.from) q = q.gte("data", filters.from);
-    if (filters.to) q = q.lte("data", filters.to);
-    if (filters.peca) q = q.ilike("peca", `%${filters.peca}%`);
-    if (filters.nesting) q = q.ilike("nesting", `%${filters.nesting}%`);
-    
-    const { data } = await q;
-    setRows((data ?? []) as Row[]);
-    setLoading(false);
+    try {
+      setLoading(true);
+      let query = supabase
+        .from("producao")
+        .select("*, operador:operadores(nome)")
+        .order("data", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (filters.from) query = query.gte("data", filters.from);
+      if (filters.to) query = query.lte("data", filters.to);
+      if (filters.peca) query = query.ilike("peca", `%${filters.peca}%`);
+      if (filters.nesting) query = query.ilike("nesting", `%${filters.nesting}%`);
+
+      let { data, error } = await query.limit(500);
+      
+      if (error) {
+        console.warn("Aviso: Algumas colunas podem estar ausentes, tentando busca básica.");
+        let basicQuery = supabase
+          .from("producao")
+          .select("id, peca, nesting, balsa, quantidade, peso_total, data, hora_inicio, operador:operadores(nome)")
+          .order("data", { ascending: false });
+        
+        if (filters.from) basicQuery = basicQuery.gte("data", filters.from);
+        if (filters.to) basicQuery = basicQuery.lte("data", filters.to);
+        
+        const { data: basicData, error: basicError } = await basicQuery.limit(500);
+        if (basicError) throw basicError;
+        data = basicData;
+      }
+      
+      let finalData = (data ?? []) as Row[];
+
+      // Filtragem por turno (feito em JS pois não há coluna no banco)
+      if (filters.turno) {
+        finalData = finalData.filter(r => {
+          if (!r.hora_inicio) return false;
+          const timePart = r.hora_inicio.includes("T") ? r.hora_inicio.split("T")[1] : r.hora_inicio;
+          const h = parseInt(timePart.split(":")[0]);
+          const isDay = h >= 7 && h < 18;
+          return filters.turno === "dia" ? isDay : !isDay;
+        });
+      }
+      
+      setRows(finalData);
+    } catch (err: any) {
+      console.error("Erro no Histórico:", err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -89,7 +130,14 @@ export default function HistoricoPage() {
           <FilterField label="Nesting" icon={<Hash size={14}/>}>
             <input className="field" placeholder="Ex: 4465..." value={filters.nesting} onChange={(e) => setFilters({ ...filters, nesting: e.target.value })} />
           </FilterField>
-          <div className="sm:col-span-2 lg:col-span-4 flex items-end">
+          <FilterField label="Turno" icon={<Clock size={14}/>}>
+            <select className="field" value={filters.turno} onChange={(e) => setFilters({ ...filters, turno: e.target.value })}>
+              <option value="">Todos</option>
+              <option value="dia">Dia (07h - 18h)</option>
+              <option value="noite">Noite (18h - 07h)</option>
+            </select>
+          </FilterField>
+          <div className="sm:col-span-2 lg:col-span-1 flex items-end">
             <button onClick={load} className="btn-primary w-full py-3 text-[10px] flex items-center justify-center gap-2">
               <Search size={14} /> Aplicar Filtros
             </button>
@@ -113,31 +161,31 @@ export default function HistoricoPage() {
             {/* Desktop View */}
             <div className="hidden lg:block glass-card overflow-hidden">
               <table className="w-full text-left">
-                <thead className="bg-white/5">
+                <thead className="bg-[#F8FAFC]">
                   <tr>
                     {["Data", "Peça", "Nesting", "Balsa", "Operador", "Qtd", "Peso", ""].map((h) => (
                       <th key={h} className="px-5 py-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-[#E2E8F0]">
                   {rows.map((r) => (
-                    <tr key={r.id} className="hover:bg-white/[0.02] transition-colors group">
+                    <tr key={r.id} className="hover:bg-[#F1F5F9] transition-colors group">
                       <td className="px-5 py-4 text-xs font-mono">{r.data}</td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap gap-1.5 max-w-[400px]">
                           {r.peca.split(" / ").map((item, idx) => {
                             const match = item.match(/(.+) \(x(\d+)\)/);
                             if (!match) return (
-                              <div key={idx} className="flex items-center bg-white/5 border border-white/10 rounded-md overflow-hidden">
-                                <span className="px-2 py-1 text-[10px] font-medium text-white/90">{item}</span>
+                              <div key={idx} className="flex items-center bg-[#F1F5F9] border border-[#E2E8F0] rounded-md overflow-hidden">
+                                <span className="px-2 py-1 text-[10px] font-medium text-[#0F172A]">{item}</span>
                               </div>
                             );
                             const [_, name, qty] = match;
                             return (
-                              <div key={idx} className="flex items-center bg-white/5 border border-white/10 rounded-md overflow-hidden">
-                                <span className="px-2 py-1 text-[10px] font-medium text-white/90">{name}</span>
-                                <span className="bg-emerald-500/10 text-emerald-400 px-1.5 py-1 text-[10px] font-black border-l border-white/10 min-w-[24px] text-center">
+                              <div key={idx} className="flex items-center bg-[#F1F5F9] border border-[#E2E8F0] rounded-md overflow-hidden hover:border-[#4F46E5]/30 transition-all">
+                                <span className="px-2 py-1 text-[10px] font-semibold text-[#64748B]">{name}</span>
+                                <span className="bg-[#A3E635] text-[#0F172A] px-1.5 py-1 text-[10px] font-black border-l border-[#E2E8F0] min-w-[24px] text-center">
                                   {qty}
                                 </span>
                               </div>
@@ -146,7 +194,17 @@ export default function HistoricoPage() {
                         </div>
                         {r.avulsa && <div className="mt-1.5 text-[8px] text-primary uppercase font-black tracking-widest flex items-center gap-1"><span className="size-1 bg-primary rounded-full animate-pulse"/> Peça Individual</div>}
                       </td>
-                      <td className="px-5 py-4 text-xs text-muted-foreground">{r.nesting || "—"}</td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs text-[#0F172A] font-medium">{r.nesting || "—"}</span>
+                          {r.versao && (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="badge-version">V{r.versao}</span>
+                              <span className="text-[9px] text-muted-foreground">Importado: {new Date(r.data_importacao || "").toLocaleDateString('pt-BR')}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-5 py-4 text-xs font-medium text-primary/80">{r.balsa || "—"}</td>
                       <td className="px-5 py-4 text-xs">{r.operador?.nome || "—"}</td>
                       <td className="px-5 py-4 text-xs font-bold tabular-nums">{r.quantidade}</td>
@@ -169,19 +227,26 @@ export default function HistoricoPage() {
               {rows.map((r) => (
                 <div key={r.id} className="glass-card p-5 space-y-4 relative overflow-hidden">
                   {r.avulsa && <div className="absolute top-0 right-0 bg-primary/20 text-primary text-[8px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-widest">Peça Individual</div>}
-                  
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
-                      <div className="text-[10px] font-mono text-muted-foreground mb-2">{r.data} • {r.nesting || "S/N"}</div>
+                      <div className="flex items-center justify-between mb-3 border-b border-[#E2E8F0] pb-2">
+                        <div className="text-[10px] font-bold text-[#0F172A] uppercase tracking-widest">{new Date(r.data).toLocaleDateString('pt-BR')}</div>
+                        {r.versao && (
+                          <div className="flex items-center gap-2 bg-[#F1F5F9] px-2 py-1 rounded-lg border border-[#E2E8F0]">
+                            <span className="text-[9px] text-[#4F46E5] font-black uppercase">Plano: {r.nesting}</span>
+                            <span className="text-[9px] text-muted-foreground">V{r.versao} • {new Date(r.data_importacao || "").toLocaleDateString('pt-BR')}</span>
+                          </div>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {r.peca.split(" / ").map((item, idx) => {
                           const match = item.match(/(.+) \(x(\d+)\)/);
-                          if (!match) return <span key={idx} className="text-sm font-bold text-white">{item}</span>;
+                          if (!match) return <span key={idx} className="text-sm font-bold text-[#0F172A]">{item}</span>;
                           const [_, name, qty] = match;
                           return (
-                            <div key={idx} className="flex items-center bg-white/5 border border-white/10 rounded-lg overflow-hidden">
-                              <span className="px-3 py-1.5 text-xs font-bold text-white/90">{name}</span>
-                              <span className="bg-emerald-500/20 text-emerald-400 px-2 py-1.5 text-[10px] font-black border-l border-white/10 min-w-[32px] text-center">
+                            <div key={idx} className="flex items-center bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg overflow-hidden">
+                              <span className="px-3 py-1.5 text-xs font-semibold text-[#64748B]">{name}</span>
+                              <span className="bg-[#A3E635] text-[#0F172A] px-2 py-1.5 text-[10px] font-black border-l border-[#E2E8F0] min-w-[32px] text-center">
                                 {qty}
                               </span>
                             </div>
@@ -196,29 +261,29 @@ export default function HistoricoPage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#E2E8F0]">
                     <div className="flex flex-col">
-                      <span className="text-[9px] uppercase tracking-widest text-white/60">Operador</span>
-                      <span className="text-xs font-medium">{r.operador?.nome || "—"}</span>
+                      <span className="text-[9px] uppercase tracking-widest text-[#64748B]">Operador</span>
+                      <span className="text-xs font-medium text-[#0F172A]">{r.operador?.nome || "—"}</span>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[9px] uppercase tracking-widest text-white/60">Balsa</span>
-                      <span className="text-xs font-bold text-primary">{r.balsa || "—"}</span>
+                      <span className="text-[9px] uppercase tracking-widest text-[#64748B]">Balsa</span>
+                      <span className="text-xs font-bold text-[#4F46E5]">{r.balsa || "—"}</span>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[9px] uppercase tracking-widest text-white/60">Quantidade</span>
-                      <span className="text-sm font-black tabular-nums">{r.quantidade} <span className="text-[10px] font-normal text-white/40 ml-1">PCS</span></span>
+                      <span className="text-[9px] uppercase tracking-widest text-[#64748B]">Quantidade</span>
+                      <span className="text-sm font-black tabular-nums text-[#0F172A]">{r.quantidade} <span className="text-[10px] font-normal text-[#94A3B8] ml-1">PCS</span></span>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[9px] uppercase tracking-widest text-white/60">Peso Total</span>
-                      <span className="text-sm font-black tabular-nums text-primary">{Number(r.peso_total || 0).toFixed(1)} <span className="text-[10px] font-normal text-white/40 ml-1">KG</span></span>
+                      <span className="text-[9px] uppercase tracking-widest text-[#64748B]">Peso Total</span>
+                      <span className="text-sm font-black tabular-nums text-[#4F46E5]">{Number(r.peso_total || 0).toFixed(1)} <span className="text-[10px] font-normal text-[#94A3B8] ml-1">KG</span></span>
                     </div>
                   </div>
 
                   {r.observacoes && (
-                    <div className="bg-white/5 p-3 rounded-xl flex gap-3 items-start">
+                    <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl flex gap-3 items-start">
                       <FileText size={14} className="text-muted-foreground shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-muted-foreground leading-relaxed italic">{r.observacoes}</p>
+                      <p className="text-[11px] text-[#334155] leading-relaxed italic">{r.observacoes}</p>
                     </div>
                   )}
                 </div>
@@ -234,8 +299,8 @@ export default function HistoricoPage() {
 function FilterField({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.2em] text-white/70 px-1">
-        {icon && <span className="text-primary">{icon}</span>}
+      <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.2em] text-[#4F46E5] px-1">
+        {icon && <span>{icon}</span>}
         {label}
       </div>
       {children}

@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Link } from "@tanstack/react-router";
 import { SectionHeader } from "@/components/SectionHeader";
 import UsuariosPage from "./Usuarios";
@@ -19,14 +20,41 @@ import {
 type Tab = "usuarios" | "catalogo" | "sistema" | "notificacoes";
 
 export default function SettingsPage() {
-  const { isAdmin, loading } = useAuth();
-  const [tab, setTab] = useState<Tab>("usuarios");
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
-  const [manualModel, setManualModel] = useState("gemini-2.0-flash-lite");
+  const { isAdmin, loading, signOut } = useAuth();
+  
+  // Lê a aba da URL se disponível
+  const [tab, setTab] = useState<Tab>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab") as Tab;
+    return ["usuarios", "catalogo", "sistema", "notificacoes"].includes(t) ? t : "usuarios";
+  });
+  
+  const [apiKey, setApiKey] = useState("");
 
-  const saveApiKey = () => {
-    localStorage.setItem("gemini_api_key", apiKey);
-    alert("Chave API salva com sucesso!");
+  useEffect(() => {
+    supabase.from("system_settings").select("value").eq("key", "gemini_api_key").maybeSingle()
+      .then(({ data }) => {
+        if (data) setApiKey(data.value);
+      });
+  }, []);
+
+  const saveApiKey = async () => {
+    if (!apiKey) {
+      await supabase.from("system_settings").delete().eq("key", "gemini_api_key");
+      alert("Chave API removida.");
+      return;
+    }
+    const { error } = await supabase.from("system_settings").upsert({ 
+      key: "gemini_api_key", 
+      value: apiKey,
+      updated_at: new Date().toISOString()
+    });
+    
+    if (error) {
+      alert("Erro ao salvar a chave: " + error.message);
+    } else {
+      alert("Chave API salva com sucesso para todos os administradores!");
+    }
   };
 
   if (!loading && !isAdmin) {
@@ -89,7 +117,7 @@ export default function SettingsPage() {
             <div className="bg-primary/5 border border-primary/10 p-5 rounded-2xl flex gap-4">
               <ShieldCheck className="text-primary shrink-0" size={24} />
               <div>
-                <h3 className="text-sm font-bold text-white mb-1">Central de Aprovação</h3>
+                <h3 className="text-sm font-bold mb-1">Central de Aprovação</h3>
                 <p className="text-[11px] text-muted-foreground uppercase tracking-widest leading-relaxed">
                   Gerencie permissões e aprove novos colaboradores. Usuários desativados não podem acessar nenhuma funcionalidade do sistema.
                 </p>
@@ -104,7 +132,7 @@ export default function SettingsPage() {
             <div className="bg-primary/5 border border-primary/10 p-5 rounded-2xl flex gap-4">
               <Database className="text-primary shrink-0" size={24} />
               <div>
-                <h3 className="text-sm font-bold text-white mb-1">Gerenciamento de Nestings</h3>
+                <h3 className="text-sm font-bold mb-1">Gerenciamento de Nestings</h3>
                 <p className="text-[11px] text-muted-foreground uppercase tracking-widest leading-relaxed">
                   Adicione, edite ou remova planos de corte do catálogo técnico. Estas informações alimentam o registro de produção e o catálogo de consulta.
                 </p>
@@ -138,7 +166,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3 text-primary border-b border-white/5 pb-4">
                 <Sparkles size={24} />
                 <div>
-                  <h3 className="text-sm font-bold text-white uppercase tracking-widest">Integração Gemini IA</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-widest">Integração Gemini IA</h3>
                   <p className="text-[10px] text-muted-foreground uppercase mt-0.5">Configurações de inteligência artificial</p>
                 </div>
               </div>
@@ -160,35 +188,6 @@ export default function SettingsPage() {
                   </div>
                 </label>
 
-                <label className="flex flex-col gap-2 pt-4 border-t border-white/5">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground px-1">Testar Modelo Específico</span>
-                  <div className="flex flex-col md:flex-row gap-3">
-                    <input 
-                      type="text" 
-                      className="field flex-1" 
-                      placeholder="Ex: gemini-2.0-flash-lite"
-                      value={manualModel}
-                      onChange={(e) => setManualModel(e.target.value)}
-                    />
-                    <button 
-                      onClick={async () => {
-                        if (!apiKey) return alert("Insira uma chave primeiro.");
-                        try {
-                          const { GoogleGenerativeAI } = await import("@google/generative-ai");
-                          const genAI = new GoogleGenerativeAI(apiKey);
-                          const model = genAI.getGenerativeModel({ model: manualModel });
-                          const result = await model.generateContent("Oi");
-                          alert("Sucesso com " + manualModel + "! Resposta: " + result.response.text());
-                        } catch (e: any) {
-                          alert("Falha com " + manualModel + ": " + e.message);
-                        }
-                      }} 
-                      className="bg-white/5 hover:bg-white/10 text-white py-3.5 px-6 rounded-xl text-[10px] font-bold uppercase border border-white/10 whitespace-nowrap"
-                    >
-                      Testar Modelo
-                    </button>
-                  </div>
-                </label>
 
                 <div className="flex justify-end">
                    <button 
@@ -227,6 +226,26 @@ export default function SettingsPage() {
             <p className="text-xs uppercase tracking-widest">Configurações de notificações em breve</p>
           </div>
         )}
+      </div>
+
+      <div className="pt-8 border-t border-white/5 mt-4">
+        <div className="glass-card p-6 border-destructive/20 bg-destructive/5 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-bold text-white mb-1">Encerrar Sessão</h3>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-widest">
+              Sair com segurança do painel administrativo
+            </p>
+          </div>
+          <button 
+            onClick={() => {
+              signOut();
+              window.location.href = "/login";
+            }} 
+            className="btn-primary bg-destructive text-destructive-foreground hover:bg-destructive/90 min-w-[200px]"
+          >
+            Sair da Conta
+          </button>
+        </div>
       </div>
     </div>
   );
