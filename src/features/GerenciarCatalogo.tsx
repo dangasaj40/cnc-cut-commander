@@ -12,7 +12,9 @@ import {
   X,
   Sparkles,
   Loader2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Pencil,
+  Plus
 } from "lucide-react";
 
 // Carregamento dinâmico para evitar quebras se a lib não estiver pronta
@@ -38,6 +40,13 @@ export default function GerenciarCatalogo() {
   const [isAIProcessing, setIsAIProcessing] = useState(false);
   const [pendingFile, setPendingFile] = useState<{data: string, type: string, name: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedNestings, setSelectedNestings] = useState<string[]>([]);
+  
+  // Edit Modal State
+  const [editingNesting, setEditingNesting] = useState<string | null>(null);
+  const [editingPieces, setEditingPieces] = useState<any[]>([]);
+  const [isEditingLoading, setIsEditingLoading] = useState(false);
+  const [isSavingPieces, setIsSavingPieces] = useState(false);
 
   const loadData = async () => {
     try {
@@ -281,29 +290,90 @@ export default function GerenciarCatalogo() {
     loadData();
   };
 
-  const Modal = () => createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0F172A]/50 p-4 backdrop-blur-sm">
-      <div className="bg-[#FFFFFF] border border-[#E2E8F0] w-full max-w-4xl rounded-3xl p-6 md:p-10 flex flex-col gap-6 shadow-2xl overflow-hidden max-h-[95vh]">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold text-primary uppercase flex items-center gap-2"><Sparkles /> Importar Catálogo</h2>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Excel ou texto bruto</p>
-          </div>
-          <button onClick={() => setShowImport(false)} className="p-2 text-[#64748B] hover:text-[#0F172A]"><X size={24} /></button>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx,.xls,.xlsm,.pdf" className="hidden" />
-          <button onClick={() => { setImportText(""); setPendingFile(null); fileInputRef.current?.click(); }} className="flex-1 bg-[#F8FAFC] hover:bg-[#E2E8F0] text-[#0F172A] p-4 rounded-xl text-[10px] font-bold uppercase border border-[#E2E8F0] flex items-center justify-center gap-2"><FileSpreadsheet className="text-emerald-600" /> Abrir Arquivo (Excel/PDF)</button>
-          <button onClick={handleAIAnalysis} disabled={isAIProcessing || !importText.trim()} className="flex-1 bg-[#4F46E5]/10 hover:bg-[#4F46E5]/20 text-[#4F46E5] p-4 rounded-xl text-[10px] font-bold uppercase border border-[#4F46E5]/20 flex items-center justify-center gap-2">{isAIProcessing ? <Loader2 className="animate-spin" /> : <Sparkles />} IA Analisar</button>
-        </div>
-        <textarea className="flex-1 w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 font-mono text-[10px] text-[#334155] min-h-[300px] outline-none" placeholder="Dados aparecerão aqui..." value={importText} onChange={(e) => setImportText(e.target.value)} />
-        <div className="flex gap-4">
-          <button onClick={() => setShowImport(false)} className="flex-1 py-4 bg-[#F1F5F9] text-[#334155] rounded-xl text-[10px] font-bold uppercase hover:bg-[#E2E8F0]">Cancelar</button>
-          <button onClick={handleImport} disabled={busy || !importText.includes(";")} className="flex-1 py-4 bg-[#4F46E5] text-white rounded-xl text-[10px] font-black uppercase disabled:opacity-30">{busy ? "Salvando..." : "Confirmar Importação"}</button>
-        </div>
-      </div>
-    </div>,
-    document.body
+  const deleteSelected = async () => {
+    if (selectedNestings.length === 0) return;
+    if (!confirm(`Excluir ${selectedNestings.length} nesting(s) selecionado(s)?`)) return;
+    setLoading(true);
+    await supabase.from("catalogo_pecas").delete().in("nesting", selectedNestings);
+    setSelectedNestings([]);
+    loadData();
+  };
+
+
+
+  const openEditModal = async (nestingId: string) => {
+    setEditingNesting(nestingId);
+    setIsEditingLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("catalogo_pecas")
+        .select("*")
+        .eq("nesting", nestingId)
+        .order("peca", { ascending: true });
+        
+      if (error) throw error;
+      setEditingPieces(data || []);
+    } catch (err: any) {
+      alert("Erro ao carregar peças: " + err.message);
+      setEditingNesting(null);
+    } finally {
+      setIsEditingLoading(false);
+    }
+  };
+
+  const savePieces = async () => {
+    if (!editingNesting) return;
+    setIsSavingPieces(true);
+    try {
+      await supabase.from("catalogo_pecas").delete().eq("nesting", editingNesting);
+      
+      const payload = editingPieces.map(p => {
+        const { id, created_at, ...rest } = p;
+        return { ...rest, nesting: editingNesting };
+      });
+      
+      if (payload.length > 0) {
+        const { error } = await supabase.from("catalogo_pecas").insert(payload);
+        if (error) throw error;
+      }
+      
+      alert("Peças atualizadas com sucesso!");
+      setEditingNesting(null);
+      loadData();
+    } catch (err: any) {
+      alert("Erro ao salvar peças: " + err.message);
+    } finally {
+      setIsSavingPieces(false);
+    }
+  };
+
+  const updatePiece = (index: number, field: string, value: any) => {
+    const updated = [...editingPieces];
+    updated[index] = { ...updated[index], [field]: value };
+    setEditingPieces(updated);
+  };
+
+  const addPiece = () => {
+    setEditingPieces([...editingPieces, {
+      nesting: editingNesting,
+      peca: "NOVA PEÇA",
+      quantidade_base: 1,
+      peso_kg: 0,
+      tipo_balsa: "",
+      dimensional: "",
+      espessura_mm: ""
+    }]);
+  };
+
+  const removePiece = (index: number) => {
+    setEditingPieces(editingPieces.filter((_, i) => i !== index));
+  };
+
+
+
+  const filteredGroups = groups.filter(g => 
+    g.nesting.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    g.versao.toString() === searchTerm.toLowerCase().replace('v', '')
   );
 
   return (
@@ -330,13 +400,47 @@ export default function GerenciarCatalogo() {
           </div>
         </div>
       </div>
+      <div className="flex items-center gap-6 mb-2 mt-2">
+        <label className="flex items-center gap-2 text-sm font-bold text-[#0F172A] cursor-pointer">
+          <input 
+            type="checkbox" 
+            className="rounded border-[#E2E8F0] text-[#4F46E5] focus:ring-[#4F46E5] size-4 cursor-pointer"
+            checked={filteredGroups.length > 0 && selectedNestings.length === filteredGroups.length}
+            onChange={(e) => {
+              if (e.target.checked) setSelectedNestings(filteredGroups.map(g => g.nesting));
+              else setSelectedNestings([]);
+            }}
+          />
+          Selecionar Todos
+        </label>
+
+        {selectedNestings.length > 0 && (
+          <button onClick={deleteSelected} className="text-destructive hover:text-destructive/80 flex items-center gap-1.5 text-xs font-bold uppercase transition-colors animate-in fade-in slide-in-from-left-2">
+            <Trash2 size={16} /> Excluir Selecionados ({selectedNestings.length})
+          </button>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {groups.filter(g => 
-          g.nesting.toLowerCase().includes(searchTerm.toLowerCase()) || 
-          g.versao.toString() === searchTerm.toLowerCase().replace('v', '')
-        ).map(g => (
-          <div key={g.nesting} className="glass-card p-5 border border-[#E2E8F0] group hover:border-[#4F46E5]/30 transition-all">
-            <div className="flex justify-between items-start mb-4">
+        {filteredGroups.map(g => (
+          <div 
+            key={g.nesting} 
+            className={`glass-card p-5 border transition-all relative ${
+              selectedNestings.includes(g.nesting) ? 'border-[#4F46E5] bg-[#4F46E5]/5 shadow-sm shadow-[#4F46E5]/10' : 'border-[#E2E8F0] group hover:border-[#4F46E5]/30'
+            }`}
+          >
+            <div className="absolute top-5 left-4 z-10">
+               <input 
+                 type="checkbox"
+                 className="rounded border-[#E2E8F0] text-[#4F46E5] focus:ring-[#4F46E5] size-4 cursor-pointer"
+                 checked={selectedNestings.includes(g.nesting)}
+                 onChange={(e) => {
+                   if (e.target.checked) setSelectedNestings(prev => [...prev, g.nesting]);
+                   else setSelectedNestings(prev => prev.filter(n => n !== g.nesting));
+                 }}
+               />
+            </div>
+            <div className="flex justify-between items-start mb-4 pl-8">
               <div className="flex items-center gap-3">
                 <div className="flex flex-col">
                   <h3 className="font-bold text-[#0F172A] text-lg leading-tight">{g.nesting}</h3>
@@ -346,7 +450,10 @@ export default function GerenciarCatalogo() {
                   </div>
                 </div>
               </div>
-              <button onClick={() => deleteNesting(g.nesting)} className="p-2 text-muted-foreground hover:text-destructive"><Trash2 size={16} /></button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => openEditModal(g.nesting)} className="p-2 text-muted-foreground hover:bg-primary/10 hover:text-primary rounded-lg transition-colors"><Pencil size={16} /></button>
+                <button onClick={() => deleteNesting(g.nesting)} className="p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors"><Trash2 size={16} /></button>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4 text-center">
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl"><span className="text-[9px] uppercase text-muted-foreground block mb-1">Peças</span><span className="text-sm font-black text-[#0F172A]">{g.total_pecas}</span></div>
@@ -355,7 +462,92 @@ export default function GerenciarCatalogo() {
           </div>
         ))}
       </div>
-      {showImport && <Modal />}
+      {showImport && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0F172A]/50 p-4 backdrop-blur-sm">
+          <div className="bg-[#FFFFFF] border border-[#E2E8F0] w-full max-w-4xl rounded-3xl p-6 md:p-10 flex flex-col gap-6 shadow-2xl overflow-hidden max-h-[95vh]">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold text-primary uppercase flex items-center gap-2"><Sparkles /> Importar Catálogo</h2>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Excel ou texto bruto</p>
+              </div>
+              <button onClick={() => setShowImport(false)} className="p-2 text-[#64748B] hover:text-[#0F172A]"><X size={24} /></button>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx,.xls,.xlsm,.pdf" className="hidden" />
+              <button onClick={() => { setImportText(""); setPendingFile(null); fileInputRef.current?.click(); }} className="flex-1 bg-[#F8FAFC] hover:bg-[#E2E8F0] text-[#0F172A] p-4 rounded-xl text-[10px] font-bold uppercase border border-[#E2E8F0] flex items-center justify-center gap-2"><FileSpreadsheet className="text-emerald-600" /> Abrir Arquivo (Excel/PDF)</button>
+              <button onClick={handleAIAnalysis} disabled={isAIProcessing || !importText.trim()} className="flex-1 bg-[#4F46E5]/10 hover:bg-[#4F46E5]/20 text-[#4F46E5] p-4 rounded-xl text-[10px] font-bold uppercase border border-[#4F46E5]/20 flex items-center justify-center gap-2">{isAIProcessing ? <Loader2 className="animate-spin" /> : <Sparkles />} IA Analisar</button>
+            </div>
+            <textarea className="flex-1 w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 font-mono text-[10px] text-[#334155] min-h-[300px] outline-none" placeholder="Dados aparecerão aqui..." value={importText} onChange={(e) => setImportText(e.target.value)} />
+            <div className="flex gap-4">
+              <button onClick={() => setShowImport(false)} className="flex-1 py-4 bg-[#F1F5F9] text-[#334155] rounded-xl text-[10px] font-bold uppercase hover:bg-[#E2E8F0]">Cancelar</button>
+              <button onClick={handleImport} disabled={busy || !importText.includes(";")} className="flex-1 py-4 bg-[#4F46E5] text-white rounded-xl text-[10px] font-black uppercase disabled:opacity-30">{busy ? "Salvando..." : "Confirmar Importação"}</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      
+      {editingNesting && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0F172A]/50 p-4 backdrop-blur-sm">
+          <div className="bg-[#FFFFFF] border border-[#E2E8F0] w-full max-w-6xl rounded-3xl p-6 md:p-8 flex flex-col gap-6 shadow-2xl overflow-hidden max-h-[95vh]">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold text-primary uppercase flex items-center gap-2"><Pencil size={20} /> Editar Nesting: {editingNesting}</h2>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Altere manualmente as peças deste plano</p>
+              </div>
+              <button onClick={() => setEditingNesting(null)} className="p-2 text-[#64748B] hover:text-[#0F172A]"><X size={24} /></button>
+            </div>
+            
+            <div className="flex-1 overflow-auto border border-[#E2E8F0] rounded-xl relative custom-scrollbar">
+              {isEditingLoading ? (
+                <div className="flex items-center justify-center h-40"><Loader2 className="animate-spin text-primary" size={32} /></div>
+              ) : (
+                <table className="w-full text-left border-collapse text-sm min-w-[800px]">
+                  <thead className="bg-[#F8FAFC] sticky top-0 z-10 shadow-sm">
+                    <tr>
+                      <th className="p-3 text-[10px] font-bold text-[#64748B] uppercase tracking-widest border-b border-[#E2E8F0]">Peça (Referência)</th>
+                      <th className="p-3 text-[10px] font-bold text-[#64748B] uppercase tracking-widest border-b border-[#E2E8F0]">Qtd</th>
+                      <th className="p-3 text-[10px] font-bold text-[#64748B] uppercase tracking-widest border-b border-[#E2E8F0]">Peso (kg)</th>
+                      <th className="p-3 text-[10px] font-bold text-[#64748B] uppercase tracking-widest border-b border-[#E2E8F0]">Balsa</th>
+                      <th className="p-3 text-[10px] font-bold text-[#64748B] uppercase tracking-widest border-b border-[#E2E8F0]">Dimensões</th>
+                      <th className="p-3 text-[10px] font-bold text-[#64748B] uppercase tracking-widest border-b border-[#E2E8F0]">Espessura</th>
+                      <th className="p-3 border-b border-[#E2E8F0] w-12"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {editingPieces.map((p, i) => (
+                      <tr key={i} className="hover:bg-[#F8FAFC]/50 transition-colors">
+                        <td className="p-2"><input type="text" className="w-full border border-transparent hover:border-[#E2E8F0] focus:border-primary rounded px-2 py-1.5 outline-none text-xs font-bold" value={p.peca || ""} onChange={e => updatePiece(i, "peca", e.target.value)} /></td>
+                        <td className="p-2"><input type="number" className="w-16 border border-transparent hover:border-[#E2E8F0] focus:border-primary rounded px-2 py-1.5 outline-none text-xs" value={p.quantidade_base || 0} onChange={e => updatePiece(i, "quantidade_base", parseInt(e.target.value) || 0)} /></td>
+                        <td className="p-2"><input type="number" step="0.1" className="w-20 border border-transparent hover:border-[#E2E8F0] focus:border-primary rounded px-2 py-1.5 outline-none text-xs" value={p.peso_kg || 0} onChange={e => updatePiece(i, "peso_kg", parseFloat(e.target.value) || 0)} /></td>
+                        <td className="p-2"><input type="text" className="w-full border border-transparent hover:border-[#E2E8F0] focus:border-primary rounded px-2 py-1.5 outline-none text-xs" value={p.tipo_balsa || ""} onChange={e => updatePiece(i, "tipo_balsa", e.target.value)} /></td>
+                        <td className="p-2"><input type="text" className="w-full border border-transparent hover:border-[#E2E8F0] focus:border-primary rounded px-2 py-1.5 outline-none text-xs" value={p.dimensional || ""} onChange={e => updatePiece(i, "dimensional", e.target.value)} /></td>
+                        <td className="p-2"><input type="text" className="w-full border border-transparent hover:border-[#E2E8F0] focus:border-primary rounded px-2 py-1.5 outline-none text-xs" value={p.espessura_mm || ""} onChange={e => updatePiece(i, "espessura_mm", e.target.value)} /></td>
+                        <td className="p-2 text-center"><button onClick={() => removePiece(i)} className="p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors"><Trash2 size={14} /></button></td>
+                      </tr>
+                    ))}
+                    {editingPieces.length === 0 && (
+                      <tr><td colSpan={7} className="p-8 text-center text-xs font-bold text-muted-foreground uppercase tracking-widest">Nenhuma peça encontrada neste nesting.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            
+            <div className="flex justify-between items-center gap-4">
+              <button onClick={addPiece} className="py-2.5 px-4 bg-[#F1F5F9] text-primary rounded-xl text-[10px] font-bold uppercase hover:bg-[#E2E8F0] flex items-center gap-2 transition-colors"><Plus size={14} /> Adicionar Peça</button>
+              
+              <div className="flex gap-3">
+                <button onClick={() => setEditingNesting(null)} className="py-2.5 px-6 bg-[#F1F5F9] text-[#334155] rounded-xl text-[10px] font-bold uppercase hover:bg-[#E2E8F0] transition-colors">Cancelar</button>
+                <button onClick={savePieces} disabled={isSavingPieces || isEditingLoading} className="py-2.5 px-8 bg-primary text-white rounded-xl text-[10px] font-black uppercase disabled:opacity-50 min-w-[120px] flex items-center justify-center transition-colors">
+                  {isSavingPieces ? <Loader2 size={16} className="animate-spin" /> : "Salvar Alterações"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

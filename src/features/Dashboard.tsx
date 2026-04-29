@@ -135,6 +135,27 @@ export default function Dashboard() {
     }));
   }, [rows]);
 
+  const badges = useMemo(() => {
+    if (loading) return { pieces: { text: "...", variant: "neutral" as const }, kg: { text: "...", variant: "neutral" as const }, nestings: { text: "...", variant: "neutral" as const } };
+    
+    const targetMultiplier = period === "today" ? 1 : period === "week" ? 7 : 30;
+    
+    const getBadge = (value: number, targetDaily: number, defaultText: string) => {
+      const target = targetDaily * targetMultiplier;
+      if (value === 0) return { text: "SEM DADOS", variant: "neutral" as const };
+      if (value < target * 0.5) return { text: "ALERTA", variant: "danger" as const };
+      if (value < target * 0.8) return { text: "ATENÇÃO", variant: "warning" as const };
+      if (value >= target * 1.2) return { text: "EXCELENTE", variant: "success" as const };
+      return { text: defaultText, variant: "success" as const };
+    };
+
+    return {
+      pieces: getBadge(totals.pieces, 50, "ON TRACK"),
+      kg: getBadge(totals.kg, 200, "EXCELENTE"),
+      nestings: getBadge(totals.nestings, 2, "ESTÁVEL")
+    };
+  }, [totals, loading, period]);
+
   return (
     <div className="flex flex-col gap-6">
       <SectionHeader
@@ -164,7 +185,8 @@ export default function Dashboard() {
           label="Peças Cortadas" 
           value={loading ? "—" : totals.pieces} 
           icon={<Square size={14} className="text-[#94A3B8]" />}
-          badge="ON TRACK"
+          badge={badges.pieces.text}
+          badgeVariant={badges.pieces.variant}
         >
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
@@ -185,7 +207,8 @@ export default function Dashboard() {
           unit="KG"
           hint={loading ? "" : `${(totals.kg / 1000).toFixed(2)} Toneladas`}
           icon={<Square size={14} className="text-[#94A3B8]" />}
-          badge="EXCELENTE"
+          badge={badges.kg.text}
+          badgeVariant={badges.kg.variant}
         >
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
@@ -204,7 +227,8 @@ export default function Dashboard() {
           label="Planos (Nestings)" 
           value={loading ? "—" : totals.nestings} 
           icon={<Square size={14} className="text-[#94A3B8]" />}
-          badge="ESTÁVEL"
+          badge={badges.nestings.text}
+          badgeVariant={badges.nestings.variant}
         >
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>

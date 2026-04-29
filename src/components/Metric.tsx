@@ -8,10 +8,11 @@ interface Props {
   highlight?: boolean;
   icon?: React.ReactNode;
   badge?: string;
+  badgeVariant?: "success" | "warning" | "danger" | "neutral";
   children?: React.ReactNode;
 }
 
-export function Metric({ label, unit, value, hint, highlight, icon, badge, children }: Props) {
+export function Metric({ label, unit, value, hint, highlight, icon, badge, badgeVariant = "success", children }: Props) {
   return (
     <div className="glass-card flex flex-col min-h-[260px] relative overflow-hidden transition-all group p-1">
       {/* Top Content Area */}
@@ -36,7 +37,12 @@ export function Metric({ label, unit, value, hint, highlight, icon, badge, child
           </div>
           
           {badge && (
-            <div className="bg-[#A3E635] text-[#0F172A] px-3 py-1.5 rounded-full text-xs font-bold shadow-sm">
+            <div className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${
+              badgeVariant === "warning" ? "bg-amber-400 text-amber-950" :
+              badgeVariant === "danger" ? "bg-red-500 text-white" :
+              badgeVariant === "neutral" ? "bg-slate-200 text-slate-800" :
+              "bg-[#A3E635] text-[#0F172A]"
+            }`}>
               {badge}
             </div>
           )}
