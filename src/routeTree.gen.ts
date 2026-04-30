@@ -12,8 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsuariosRouteImport } from './routes/usuarios'
 import { Route as RetornoRouteImport } from './routes/retorno'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as ParadasRouteImport } from './routes/paradas'
 import { Route as OperadoresRouteImport } from './routes/operadores'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as HistoricoRouteImport } from './routes/historico'
 import { Route as EmissaoRouteImport } from './routes/emissao'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as CatalogoRouteImport } from './routes/catalogo'
@@ -35,6 +37,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ParadasRoute = ParadasRouteImport.update({
+  id: '/paradas',
+  path: '/paradas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OperadoresRoute = OperadoresRouteImport.update({
   id: '/operadores',
   path: '/operadores',
@@ -43,6 +50,11 @@ const OperadoresRoute = OperadoresRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoricoRoute = HistoricoRouteImport.update({
+  id: '/historico',
+  path: '/historico',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EmissaoRoute = EmissaoRouteImport.update({
@@ -77,8 +89,10 @@ export interface FileRoutesByFullPath {
   '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/emissao': typeof EmissaoRoute
+  '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
   '/operadores': typeof OperadoresRoute
+  '/paradas': typeof ParadasRoute
   '/reset-password': typeof ResetPasswordRoute
   '/retorno': typeof RetornoRoute
   '/usuarios': typeof UsuariosRoute
@@ -89,8 +103,10 @@ export interface FileRoutesByTo {
   '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/emissao': typeof EmissaoRoute
+  '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
   '/operadores': typeof OperadoresRoute
+  '/paradas': typeof ParadasRoute
   '/reset-password': typeof ResetPasswordRoute
   '/retorno': typeof RetornoRoute
   '/usuarios': typeof UsuariosRoute
@@ -102,8 +118,10 @@ export interface FileRoutesById {
   '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/emissao': typeof EmissaoRoute
+  '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
   '/operadores': typeof OperadoresRoute
+  '/paradas': typeof ParadasRoute
   '/reset-password': typeof ResetPasswordRoute
   '/retorno': typeof RetornoRoute
   '/usuarios': typeof UsuariosRoute
@@ -116,8 +134,10 @@ export interface FileRouteTypes {
     | '/catalogo'
     | '/configuracoes'
     | '/emissao'
+    | '/historico'
     | '/login'
     | '/operadores'
+    | '/paradas'
     | '/reset-password'
     | '/retorno'
     | '/usuarios'
@@ -128,8 +148,10 @@ export interface FileRouteTypes {
     | '/catalogo'
     | '/configuracoes'
     | '/emissao'
+    | '/historico'
     | '/login'
     | '/operadores'
+    | '/paradas'
     | '/reset-password'
     | '/retorno'
     | '/usuarios'
@@ -140,8 +162,10 @@ export interface FileRouteTypes {
     | '/catalogo'
     | '/configuracoes'
     | '/emissao'
+    | '/historico'
     | '/login'
     | '/operadores'
+    | '/paradas'
     | '/reset-password'
     | '/retorno'
     | '/usuarios'
@@ -153,8 +177,10 @@ export interface RootRouteChildren {
   CatalogoRoute: typeof CatalogoRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   EmissaoRoute: typeof EmissaoRoute
+  HistoricoRoute: typeof HistoricoRoute
   LoginRoute: typeof LoginRoute
   OperadoresRoute: typeof OperadoresRoute
+  ParadasRoute: typeof ParadasRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   RetornoRoute: typeof RetornoRoute
   UsuariosRoute: typeof UsuariosRoute
@@ -183,6 +209,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/paradas': {
+      id: '/paradas'
+      path: '/paradas'
+      fullPath: '/paradas'
+      preLoaderRoute: typeof ParadasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/operadores': {
       id: '/operadores'
       path: '/operadores'
@@ -195,6 +228,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/historico': {
+      id: '/historico'
+      path: '/historico'
+      fullPath: '/historico'
+      preLoaderRoute: typeof HistoricoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/emissao': {
@@ -241,8 +281,10 @@ const rootRouteChildren: RootRouteChildren = {
   CatalogoRoute: CatalogoRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   EmissaoRoute: EmissaoRoute,
+  HistoricoRoute: HistoricoRoute,
   LoginRoute: LoginRoute,
   OperadoresRoute: OperadoresRoute,
+  ParadasRoute: ParadasRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   RetornoRoute: RetornoRoute,
   UsuariosRoute: UsuariosRoute,

@@ -22,6 +22,7 @@ interface NestingGroup {
   pecas: string[];
   esps: string[];
   tempo: number;
+  peso: number; // Novo campo
   blocos: string[];
   painels: string[];
   count: number;
@@ -183,7 +184,7 @@ export default function EmissaoPage() {
     // 1. Buscar os dados brutos de TUDO que está disponível para esta balsa
     const { data: allAvailable, error: fetchErr } = await supabase
       .from("controle_nestings")
-      .select("nesting, bloco, painel, peca, espessura_mm, tempo_corte_total, descricao, status_processo")
+      .select("nesting, bloco, painel, peca, espessura_mm, tempo_corte_total, peso_total, descricao, status_processo")
       .eq("id_balsa", selectedBalsa)
       .eq("status_processo", "Disponivel");
 
@@ -225,11 +226,13 @@ export default function EmissaoPage() {
             pecas: [],
             esps: [],
             tempo: item.tempo_corte_total || 0,
+            peso: 0,
             blocos: [],
             painels: [],
             count: 0
           };
         }
+        groups[item.nesting].peso += Number(item.peso_total || 0);
         if (!groups[item.nesting].pecas.includes(item.peca)) groups[item.nesting].pecas.push(item.peca);
         if (!groups[item.nesting].esps.includes(String(item.espessura_mm))) groups[item.nesting].esps.push(String(item.espessura_mm));
         if (!groups[item.nesting].blocos.includes(item.bloco)) groups[item.nesting].blocos.push(item.bloco);
@@ -242,11 +245,31 @@ export default function EmissaoPage() {
     setLoading(false);
   };
 
+  const parseNestingId = (nesting: string) => {
+    const parts = nesting.split("-");
+    if (parts.length >= 3) {
+      return { maquina: parts[1], turno: parts[2] };
+    }
+    return null;
+  };
+
   const toggleSelect = (nesting: string) => {
     const next = new Set(selectedNestings);
+    const isAdding = !next.has(nesting);
+    
     if (next.has(nesting)) next.delete(nesting);
     else next.add(nesting);
+    
     setSelectedNestings(next);
+
+    // Se estiver selecionando (adicionando) e os campos estiverem vazios, tenta auto-preencher
+    if (isAdding) {
+      const smartData = parseNestingId(nesting);
+      if (smartData) {
+        if (!config.maquina) setConfig(p => ({ ...p, maquina: smartData.maquina }));
+        if (!config.turno) setConfig(p => ({ ...p, turno: smartData.turno }));
+      }
+    }
   };
 
   const toggleAll = () => {
@@ -507,8 +530,10 @@ export default function EmissaoPage() {
                                  {selectedNestings.has(n.nesting) ? <CheckSquare size={18} className="text-primary" /> : <Square size={18} className="text-muted-foreground group-hover:text-white" />}
                               </td>
                               <td className="p-4">
-                                 <div className="font-black text-white">{n.nesting}</div>
-                                 <div className="text-[9px] text-muted-foreground uppercase">{n.count} peças</div>
+                                 <div className="inline-block px-3 py-1 bg-primary/20 text-primary rounded-lg text-sm font-black border border-primary/30">
+                                    {n.nesting}
+                                 </div>
+                                 <div className="text-[9px] text-muted-foreground uppercase mt-1">{n.count} peças</div>
                               </td>
                               <td className="p-4">
                                  <div className="flex flex-wrap gap-1">

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import OperadoresPage from "@/features/Operadores";
+import RankingOperadores from "@/features/RankingOperadores";
 
 export const Route = createFileRoute("/operadores")({ 
-  component: OperadoresPage 
+  component: RankingOperadores 
 });

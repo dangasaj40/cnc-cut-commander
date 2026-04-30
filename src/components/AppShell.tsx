@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/integrations/supabase/client";
 import { ReactNode } from "react";
 import { 
   LayoutDashboard, 
@@ -11,7 +13,10 @@ import {
   Settings,
   ShieldAlert,
   Cpu,
-  Package
+  Package,
+  AlertTriangle,
+  Trophy,
+  ScrollText
 } from "lucide-react";
 
 const NAV = [
@@ -19,6 +24,9 @@ const NAV = [
   { to: "/balsas", label: "Balsas", icon: Package, roles: ["admin", "supervisor"] },
   { to: "/emissao", label: "Emissão", icon: PlusCircle, roles: ["admin", "supervisor"] },
   { to: "/retorno", label: "Baixa de Produção", icon: History, roles: ["admin", "supervisor", "viewer"] },
+  { to: "/paradas", label: "Paradas", icon: AlertTriangle, roles: ["admin", "supervisor", "viewer"] },
+  { to: "/operadores", label: "Operadores", icon: Trophy, roles: ["admin", "supervisor", "viewer"] },
+  { to: "/historico", label: "Histórico", icon: ScrollText, roles: ["admin", "supervisor", "viewer"] },
   { to: "/catalogo", label: "Nestings", icon: Library, roles: ["admin", "supervisor", "viewer"] },
 ] as const;
 
@@ -26,6 +34,52 @@ export function AppShell({ children }: { children?: ReactNode }) {
   const { profile, roles, signOut, isAdmin, loading } = useAuth();
   const router = useRouter();
   const path = useRouterState({ select: (s) => s.location.pathname });
+
+  // Robô de Auto-Preenchimento Silencioso
+  useEffect(() => {
+    const runSetup = async () => {
+      // 1. Verificar Operadores (Lista Antiga vs Nova)
+      const { data: opData } = await supabase.from("system_settings").select("value").eq("key", "operadores").maybeSingle();
+      const currentOps = opData?.value ? JSON.parse(opData.value) : [];
+      
+      if (currentOps.length === 0 || currentOps.includes("ALBERIS")) {
+        console.log("Atualizando parâmetros...");
+        const params = {
+          maquinas: ["606", "605", "603"],
+          turnos: ["D", "N"],
+          operadores: ["MÁRCIO REBOUÇAS", "IVANILTON", "MARCOS", "ALBERT ASTEN", "JAILSON", "RICARDO"],
+          motivos_parada: ["TROCA DE CONSUMIVEL", "MANUTENCAO", "FALTA DE CHAPA", "AJUSTE", "PROGRAMACAO", "OUTROS"],
+          tipos_balsa: ["RAKE", "BOX", "BALSA"]
+        };
+
+        for (const [key, value] of Object.entries(params)) {
+          await supabase.from("system_settings").upsert({
+            key,
+            value: JSON.stringify(value),
+            updated_at: new Date().toISOString()
+          });
+        }
+      }
+
+      // 2. Garantir Criação de Balsas Históricas (Usa flag para rodar apenas uma vez)
+      if (!localStorage.getItem("balsas_sync_done")) {
+        console.log("Sincronizando balsas históricas...");
+        const historicalBalsas = [
+          { id_balsa: "RAKE-13", tipo_balsa: "RAKE", nome_balsa: "13" },
+          { id_balsa: "BOX-15", tipo_balsa: "BOX", nome_balsa: "15" },
+          { id_balsa: "BOX-16", tipo_balsa: "BOX", nome_balsa: "16" },
+          { id_balsa: "RAKE-14", tipo_balsa: "RAKE", nome_balsa: "14" }
+        ];
+
+        for (const b of historicalBalsas) {
+          await supabase.from("balsas").upsert(b, { onConflict: 'id_balsa' });
+        }
+        localStorage.setItem("balsas_sync_done", "true");
+        console.log("Balsas históricas prontas!");
+      }
+    };
+    runSetup();
+  }, []);
 
   return (
     <div className="min-h-dvh bg-[#F1F5F9] text-[#0F172A] flex flex-col">

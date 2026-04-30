@@ -56,9 +56,14 @@ export default function BalsasPage() {
     }
   };
 
+  const [pastedData, setPastedData] = useState("");
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newBalsa.id || !newBalsa.tipo) return;
+    if (!newBalsa.id || !newBalsa.tipo || !pastedData.trim()) {
+      alert("Preencha todos os campos e cole os dados da planilha.");
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -72,61 +77,69 @@ export default function BalsasPage() {
 
       if (balsaError) throw balsaError;
 
-      // 2. Buscar a Matriz (Template) na base_dados
-      const { data: templateData, error: templateError } = await supabase
-        .from("base_dados")
-        .select("*")
-        .eq("tipo_balsa", newBalsa.tipo);
+      // 2. Processar Dados Colados (Tab-separated do Excel)
+      const lines = pastedData.trim().split("\n");
+      const nestingsToInsert: any[] = [];
+      const uniqueNestingNumbers = new Set<string>();
 
-      if (templateError) throw templateError;
+      lines.forEach((line) => {
+        const cols = line.split("\t");
+        if (cols.length >= 11) {
+          // Ordem esperada baseada na análise da planilha:
+          // TIPO, TEMPO, QTD, PECA, DESC, ESP, PESO_U, PESO_T, BLOCO, PAINEL, NESTING
+          const item = {
+            id_balsa: newBalsa.id,
+            tipo_balsa: newBalsa.tipo,
+            nome_balsa: newBalsa.nome || newBalsa.id,
+            bloco: cols[8]?.trim(),
+            painel: cols[9]?.trim(),
+            nesting: cols[10]?.trim(),
+            peca: cols[3]?.trim(),
+            descricao: cols[4]?.trim(),
+            espessura_mm: Number(cols[5]?.replace(",", ".") || 0),
+            peso_total: Number(cols[7]?.replace(",", ".") || 0),
+            qtd: Number(cols[2] || 0),
+            tempo_corte_total: Number(cols[1]?.replace(",", ".") || 0),
+            status_processo: "Disponivel",
+            chave_nesting: `${newBalsa.id}|${cols[10]?.trim()}`
+          };
 
-      if (templateData && templateData.length > 0) {
-        // 3. Mapear e Inserir no CONTROLE_NESTINGS (Seguindo mdl_ControleNestingsV6)
-        const nestingsToInsert = templateData.map(item => ({
-          id_balsa: newBalsa.id,
-          tipo_balsa: newBalsa.tipo,
-          nome_balsa: newBalsa.nome || newBalsa.id,
-          bloco: item.bloco,
-          painel: item.painel,
-          nesting: item.nesting,
-          peca: item.peca,
-          descricao: item.descricao,
-          espessura_mm: Number(item.espessura_mm),
-          qtd: item.qtd,
-          tempo_corte_total: item.tempo_corte_total,
-          status_processo: "Disponivel",
-          chave_nesting: `${newBalsa.id}|${item.nesting}`
-        }));
+          if (item.nesting) {
+            nestingsToInsert.push(item);
+            uniqueNestingNumbers.add(item.nesting);
+          }
+        }
+      });
 
-        const { error: insertError } = await supabase
-          .from("controle_nestings")
-          .insert(nestingsToInsert);
+      if (nestingsToInsert.length === 0) throw new Error("Nenhum dado válido encontrado. Verifique se copiou as colunas corretas.");
 
-        if (insertError) throw insertError;
+      // 3. Inserir no CONTROLE_NESTINGS
+      const { error: insertError } = await supabase
+        .from("controle_nestings")
+        .insert(nestingsToInsert);
 
-        // 4. Calcular Total de Nestings ÚNICOS (Chapas)
-        const uniqueNestingNumbers = new Set(templateData.map(item => item.nesting));
-        const totalUnicos = uniqueNestingNumbers.size;
+      if (insertError) throw insertError;
 
-        // 5. Atualizar os totais na balsa
-        const { error: updateError } = await supabase
-          .from("balsas")
-          .update({
-            total_nestings: totalUnicos, // Agora é o total de chapas, não de peças
-            pendentes: totalUnicos,
-            emitidos: 0,
-            finalizados: 0,
-            percentual_concluido: 0
-          })
-          .eq("id_balsa", newBalsa.id);
+      // 4. Atualizar os totais na balsa
+      const totalUnicos = uniqueNestingNumbers.size;
+      const { error: updateError } = await supabase
+        .from("balsas")
+        .update({
+          total_nestings: totalUnicos,
+          pendentes: totalUnicos, // Todos começam como pendentes (Disponivel)
+          emitidos: 0,
+          finalizados: 0,
+          percentual_concluido: 0
+        })
+        .eq("id_balsa", newBalsa.id);
           
-        if (updateError) throw updateError;
-      }
+      if (updateError) throw updateError;
 
       setShowAddModal(false);
       setNewBalsa({ id: "", tipo: "", nome: "" });
+      setPastedData("");
       fetchBalsas();
-      alert(`Balsa ${newBalsa.id} cadastrada com sucesso! ${templateData?.length || 0} nestings carregados.`);
+      alert(`Balsa ${newBalsa.id} cadastrada com sucesso! ${totalUnicos} nestings (chapas) processados.`);
     } catch (error: any) {
       alert("Erro ao cadastrar: " + error.message);
     } finally {
@@ -273,7 +286,7 @@ Isso apagará permanentemente todos os nestings, ordens de emissão e logs de re
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="glass-card max-w-md w-full p-8 space-y-6"
+            className="glass-card max-w-md w-full p-8 space-y-6 max-h-[90vh] overflow-y-auto custom-scrollbar"
           >
             <div className="flex justify-between items-center border-b border-white/5 pb-4">
                <h2 className="text-xl font-bold flex items-center gap-2"><Plus className="text-primary" /> Nova Balsa</h2>
@@ -323,9 +336,23 @@ Isso apagará permanentemente todos os nestings, ordens de emissão e logs de re
                   />
                </label>
 
+               <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-1">3. Dados da Planilha (Excel)</span>
+                  <textarea 
+                    required
+                    className="field h-32 font-mono text-[10px] leading-tight" 
+                    placeholder="Copie as colunas (TIPO até NESTING) na planilha e cole aqui..."
+                    value={pastedData}
+                    onChange={e => setPastedData(e.target.value)}
+                  ></textarea>
+                  <p className="text-[9px] text-slate-400 mt-1 px-1">
+                    Copie as colunas da aba **BASE_DADOS** (começando em TIPO até NESTING).
+                  </p>
+               </label>
+
                {newBalsa.id && (
                  <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl">
-                    <span className="text-[9px] font-black uppercase text-primary block mb-1">ID Gerado Automaticamente</span>
+                    <span className="text-[9px] font-black uppercase text-primary block mb-1">ID da Balsa</span>
                     <div className="text-3xl font-black text-primary tracking-tighter">{newBalsa.id}</div>
                  </div>
                )}

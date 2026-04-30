@@ -16,7 +16,9 @@ import {
   ArrowRight,
   Sparkles,
   X,
-  Plus
+  Plus,
+  RefreshCw,
+  Zap
 } from "lucide-react";
 
 function ParameterList({ title, paramKey }: { title: string, paramKey: string }) {
@@ -213,12 +215,41 @@ export default function SettingsPage() {
           <div className="space-y-6">
              {/* Parâmetros do Negócio (Aba PARAMETROS da Planilha) */}
              <div className="glass-card p-6 md:p-8 space-y-6">
-                <div className="flex items-center gap-3 text-primary border-b border-white/5 pb-4">
-                  <Database size={24} />
-                  <div>
-                    <h3 className="text-sm font-bold uppercase tracking-widest">Parâmetros de Operação</h3>
-                    <p className="text-[10px] text-muted-foreground uppercase mt-0.5">Listas de validação do chão de fábrica</p>
+                <div className="flex items-center justify-between gap-3 text-primary border-b border-white/5 pb-4">
+                  <div className="flex items-center gap-3">
+                    <Database size={24} />
+                    <div>
+                      <h3 className="text-sm font-bold uppercase tracking-widest">Parâmetros de Operação</h3>
+                      <p className="text-[10px] text-muted-foreground uppercase mt-0.5">Listas de validação do chão de fábrica</p>
+                    </div>
                   </div>
+                  <button 
+                    onClick={async () => {
+                      if (!confirm("Deseja carregar todos os operadores, máquinas e motivos padrão da planilha? Isso irá sobrescrever as listas atuais.")) return;
+                      
+                      const params = {
+                        maquinas: ["CNC 01", "CNC 02", "CNC 03", "CNC 04"],
+                        turnos: ["1º TURNO", "2º TURNO", "3º TURNO"],
+                        operadores: ["ALBERIS", "ALCIR", "ANDRE", "ANTONIO", "CARLOS", "CLEBIO", "DANILO", "EDNALDO", "EDSON", "ELINALDO", "ERIVALDO", "EVANDRO", "EXPEDITO", "FERNANDO", "GENIVALDO", "GILVAN", "HEVERTON", "JAIRO", "JOAO PAULO", "JOSE", "JULIO", "LEANDRO", "LUCAS", "LUCIANO", "LUIZ", "MANOEL", "MARCIO", "MARCOS", "MAURICIO", "PAULO", "RAFAEL", "REGINALDO", "RICARDO", "ROBERTO", "RODRIGO", "ROGERIO", "RONALDO", "SAMUEL", "SERGIO", "THIAGO", "VALDEMIR", "WAGNER", "WASHINGTON", "WESLEY", "WILLAMS", "WILSON"],
+                        motivos_parada: ["AGUARDANDO MATERIAL", "AGUARDANDO PROGRAMAÇÃO", "ALIMENTAÇÃO", "AJUSTE DE MÁQUINA", "LIMPEZA", "MANUTENÇÃO CORRETIVA", "MANUTENÇÃO PREVENTIVA", "OUTROS", "PALESTRA/REUNIÃO", "REPARO DE PEÇA", "SEM OPERADOR", "TROCA DE FERRAMENTA"],
+                        tipos_balsa: ["RAKE", "BALSA", "PLANO"]
+                      };
+
+                      for (const [key, value] of Object.entries(params)) {
+                        await supabase.from("system_settings").upsert({
+                          key,
+                          value: JSON.stringify(value),
+                          updated_at: new Date().toISOString()
+                        });
+                      }
+                      
+                      alert("Parâmetros carregados com sucesso! A página será reiniciada.");
+                      window.location.reload();
+                    }}
+                    className="text-[9px] font-black uppercase tracking-widest bg-primary/10 text-primary px-3 py-1.5 rounded-lg border border-primary/20 hover:bg-primary hover:text-black transition-all shadow-sm"
+                  >
+                    Importar Padrões da Planilha
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -227,6 +258,73 @@ export default function SettingsPage() {
                   <ParameterList title="Operadores de Máquina" paramKey="operadores" />
                   <ParameterList title="Motivos de Parada" paramKey="motivos_parada" />
                   <ParameterList title="Tipos de Balsa" paramKey="tipos_balsa" />
+                </div>
+             </div>
+
+             {/* Manutenção de Dados */}
+             <div className="glass-card p-6 md:p-8 space-y-6 border-amber-500/20 bg-amber-500/5">
+                <div className="flex items-center gap-3 text-amber-500 border-b border-white/5 pb-4">
+                  <RefreshCw size={24} />
+                  <div>
+                    <h3 className="text-sm font-bold uppercase tracking-widest">Manutenção de Dados</h3>
+                    <p className="text-[10px] text-muted-foreground uppercase mt-0.5">Sincronização retroativa de pesos e tempos</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                   <p className="text-[11px] text-slate-600 leading-relaxed max-w-2xl">
+                      Se o seu Dashboard estiver com valores zerados, clique no botão abaixo. O sistema irá buscar os pesos e tempos de corte na **Base Técnica** e preencher os registros antigos que foram criados antes desta funcionalidade.
+                   </p>
+                   
+                   <button 
+                    id="btn-sync-data"
+                    onClick={async (e) => {
+                       const btn = e.currentTarget;
+                       btn.disabled = true;
+                       const originalText = btn.innerHTML;
+                       btn.innerHTML = "Sincronizando... Aguarde";
+                       
+                       try {
+                          // 1. Buscar Nestings da Base
+                          const { data: baseItems } = await supabase.from("base_dados").select("nesting, peso_total_kg, tempo_corte_total");
+                          if (!baseItems) throw new Error("Base não encontrada");
+                          
+                          const nestingMap: Record<string, { p: number, t: number }> = {};
+                          baseItems.forEach(i => {
+                             if (!nestingMap[i.nesting]) nestingMap[i.nesting] = { p: 0, t: Number(i.tempo_corte_total || 0) };
+                             nestingMap[i.nesting].p += Number(i.peso_total_kg || 0);
+                          });
+                          
+                          // 2. Sincronizar controle_nestings
+                          const { data: controls } = await supabase.from("controle_nestings").select("id, nesting").is("peso_total", null);
+                          if (controls) {
+                             for (const c of controls) {
+                                const d = nestingMap[c.nesting];
+                                if (d) await supabase.from("controle_nestings").update({ peso_total: d.p, tempo_corte_total: d.t }).eq("id", c.id);
+                             }
+                          }
+                          
+                          // 3. Sincronizar log_retorno
+                          const { data: logs } = await supabase.from("log_retorno").select("id, nesting").is("peso_total", null);
+                          if (logs) {
+                             for (const l of logs) {
+                                const d = nestingMap[l.nesting];
+                                if (d) await supabase.from("log_retorno").update({ peso_total: d.p, tempo_corte_total: d.t }).eq("id", l.id);
+                             }
+                          }
+                          
+                          alert("Dados sincronizados com sucesso! O Dashboard já deve exibir os valores corretos.");
+                       } catch (err: any) {
+                          alert("Erro na sincronização: " + err.message);
+                       } finally {
+                          btn.disabled = false;
+                          btn.innerHTML = originalText;
+                       }
+                    }}
+                    className="btn-primary bg-amber-500 text-black hover:bg-amber-400 w-fit flex items-center gap-2"
+                   >
+                      <Zap size={16} /> Sincronizar Pesos e Tempos Agora
+                   </button>
                 </div>
              </div>
 

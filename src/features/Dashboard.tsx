@@ -6,7 +6,7 @@ import { startOfDay, startOfWeek, startOfMonth, format, subDays } from "date-fns
 import { Link } from "@tanstack/react-router";
 import { 
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
-  AreaChart, Area
+  AreaChart, Area, PieChart, Pie, Cell
 } from "recharts";
 import { 
   ChevronDown,
@@ -15,13 +15,16 @@ import {
   Activity, 
   Layers,
   Square,
+  Weight,
   Clock,
   Calendar,
   CheckCircle2,
   Package,
   ArrowRight,
   Download,
-  Cpu
+  Cpu,
+  AlertTriangle,
+  BarChart3
 } from "lucide-react";
 import { motion } from "framer-motion";
 import * as XLSX from "xlsx";
@@ -46,6 +49,7 @@ export default function Dashboard() {
 
   const [selectedBalsaId, setSelectedBalsaId] = useState<string>("");
   const [panelStats, setPanelStats] = useState<any[]>([]);
+  const [stopStats, setStopStats] = useState<{totalMin: number, reasons: any[]}>({ totalMin: 0, reasons: [] });
 
   useEffect(() => {
     const today = format(startOfDay(new Date()), "yyyy-MM-dd");
@@ -58,19 +62,47 @@ export default function Dashboard() {
 
       // 2. Se houver balsa selecionada, buscar detalhes dos painéis
       if (selectedBalsaId) {
-        const { data: pData } = await supabase
+        // Tentamos buscar com peso e tempo, se falhar (coluna inexistente), buscamos o básico
+        let { data: pData, error: pError } = await supabase
           .from("controle_nestings")
-          .select("painel, status_processo, nesting")
+          .select("painel, status_processo, nesting, peso_total, tempo_corte_total")
           .eq("id_balsa", selectedBalsaId);
+
+        if (pError) {
+          console.warn("Colunas de peso/tempo não encontradas, usando fallback básico.");
+          const { data: fallbackData } = await supabase
+            .from("controle_nestings")
+            .select("painel, status_processo, nesting")
+            .eq("id_balsa", selectedBalsaId);
+          pData = fallbackData;
+        }
         
         if (pData) {
-           // Agrupar por Painel
            const groups: Record<string, any> = {};
            pData.forEach(row => {
               const p = row.painel || "SEM PAINEL";
-              if (!groups[p]) groups[p] = { painel: p, total: new Set(), finalizados: new Set(), emitidos: new Set() };
+              if (!groups[p]) groups[p] = { 
+                painel: p, 
+                total: new Set(), 
+                finalizados: new Set(), 
+                emitidos: new Set(),
+                pesoTotal: 0,
+                pesoFinalizado: 0,
+                tempoTotal: 0,
+                tempoPendente: 0
+              };
+              
               groups[p].total.add(row.nesting);
-              if (row.status_processo === "Finalizado") groups[p].finalizados.add(row.nesting);
+              groups[p].pesoTotal += Number(row.peso_total || 0);
+              groups[p].tempoTotal += Number(row.tempo_corte_total || 0);
+
+              if (row.status_processo === "Finalizado") {
+                groups[p].finalizados.add(row.nesting);
+                groups[p].pesoFinalizado += Number(row.peso_total || 0);
+              } else {
+                groups[p].tempoPendente += Number(row.tempo_corte_total || 0);
+              }
+
               if (row.status_processo === "Em processamento") groups[p].emitidos.add(row.nesting);
            });
 
@@ -79,19 +111,56 @@ export default function Dashboard() {
               total: g.total.size,
               finalizados: g.finalizados.size,
               pendentes: g.total.size - g.finalizados.size,
+              pesoTotal: g.pesoTotal,
+              pesoFinalizado: g.pesoFinalizado,
+              tempoTotal: g.tempoTotal,
+              tempoPendente: g.tempoPendente,
               percentual: g.total.size > 0 ? (g.finalizados.size / g.total.size) * 100 : 0
            }));
            setPanelStats(stats);
         }
       }
 
-      // 3. Buscar logs recentes
-      const { data: lData } = await supabase
+      // 3. Buscar logs para o período selecionado
+      let query = supabase
         .from("log_retorno")
         .select("*")
-        .order("data_registro", { ascending: false })
-        .limit(50);
+        .order("data_registro", { ascending: false });
+
+      if (period === "today") {
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        query = query.gte("data_registro", today.toISOString());
+      } else if (period === "week") {
+        const weekAgo = subDays(new Date(), 7);
+        query = query.gte("data_registro", weekAgo.toISOString());
+      } else if (period === "month") {
+        const monthStart = startOfMonth(new Date());
+        query = query.gte("data_registro", monthStart.toISOString());
+      }
+      // Se for "total", não aplicamos filtro de data
+
+      const { data: lData } = await query;
       if (lData) setLogs(lData);
+
+      // 4. Buscar dados de Paradas
+      const { data: sData } = await supabase
+        .from("log_paradas")
+        .select("*")
+        .order("data_inicio", { ascending: false });
+      
+      if (sData) {
+         const totalMin = sData.reduce((acc, curr) => acc + (curr.duracao_minutos || 0), 0);
+         const reasonMap: Record<string, number> = {};
+         sData.forEach(s => {
+            reasonMap[s.motivo] = (reasonMap[s.motivo] || 0) + (s.duracao_minutos || 0);
+         });
+         const reasons = Object.entries(reasonMap)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a,b) => b.value - a.value);
+         
+         setStopStats({ totalMin, reasons });
+      }
       
       setLoading(false);
     };
@@ -100,13 +169,23 @@ export default function Dashboard() {
   }, [period, selectedBalsaId]);
 
   const totals = useMemo(() => {
-    const total = balsasData.reduce((acc, b) => acc + (b.pendentes + b.emitidos + b.finalizados), 0);
+    const totalNestings = balsasData.reduce((acc, b) => acc + (b.pendentes + b.emitidos + b.finalizados), 0);
     const finalizados = balsasData.reduce((acc, b) => acc + b.finalizados, 0);
-    const emitidos = balsasData.reduce((acc, b) => acc + b.emitidos, 0);
-    const efficiency = total > 0 ? (finalizados / total) * 100 : 0;
+    const totalPecas = logs.reduce((acc, l) => {
+      if (!l.pecas_agrupadas) return acc + 0;
+      // Se for uma lista de nomes (contém vírgula)
+      if (typeof l.pecas_agrupadas === 'string' && l.pecas_agrupadas.includes(",")) {
+        return acc + l.pecas_agrupadas.split(",").length;
+      }
+      // Se for apenas um número
+      const num = parseInt(l.pecas_agrupadas);
+      return acc + (isNaN(num) ? 1 : num);
+    }, 0);
+    const totalPeso = logs.reduce((acc, l) => acc + (Number(l.peso_total) || 0), 0);
+    const efficiency = totalNestings > 0 ? (finalizados / totalNestings) * 100 : 0;
 
-    return { total, finalizados, emitidos, efficiency };
-  }, [balsasData]);
+    return { totalNestings, finalizados, totalPecas, totalPeso, efficiency };
+  }, [balsasData, logs]);
 
   const chartData = useMemo(() => {
     const days = 7;
@@ -139,28 +218,31 @@ export default function Dashboard() {
     };
 
     return {
-      pieces: getBadge(totals.pieces, 50, "ON TRACK"),
-      kg: getBadge(totals.kg, 200, "EXCELENTE"),
-      nestings: getBadge(totals.nestings, 2, "ESTÁVEL")
+      pieces: getBadge(totals.totalPecas, 50, "ON TRACK"),
+      kg: getBadge(totals.totalPeso, 200, "EXCELENTE"),
+      nestings: getBadge(totals.totalNestings, 2, "ESTÁVEL")
     };
   }, [totals, loading, period]);
 
   const exportToExcel = () => {
-    if (rows.length === 0) {
-      alert("Nenhum dado de produção encontrado para este período.");
+    if (logs.length === 0) {
+      alert("Nenhum dado de produção encontrado.");
       return;
     }
-    const dataToExport = rows.map(r => ({
-      "Data": new Date(r.data + "T12:00:00").toLocaleDateString("pt-BR"),
-      "Nesting": r.nesting || "N/A",
-      "Qtd Peças": r.quantidade || 0,
-      "Peso Total (kg)": r.peso_total || 0
+    const dataToExport = logs.map(log => ({
+      "Data": format(new Date(log.data_registro), "dd/MM/yyyy HH:mm"),
+      "Balsa": log.id_balsa,
+      "Nesting": log.nesting,
+      "Máquina": log.maquina,
+      "Operador": log.operador,
+      "Peso (kg)": log.peso_total || 0,
+      "Peças": log.pecas_agrupadas
     }));
+    
     const ws = XLSX.utils.json_to_sheet(dataToExport);
-    ws['!cols'] = [{wch: 15}, {wch: 25}, {wch: 15}, {wch: 15}];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Produção");
-    const fileName = `Relatorio_Producao_${period}_${format(new Date(), "yyyyMMdd")}.xlsx`;
+    XLSX.utils.book_append_sheet(wb, ws, "Produção Consolidada");
+    const fileName = `Relatorio_CNC_${format(new Date(), "yyyyMMdd_HHmm")}.xlsx`;
     XLSX.writeFile(wb, fileName);
   };
 
@@ -181,6 +263,16 @@ export default function Dashboard() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
                <span className="text-[10px] font-black uppercase text-slate-400">Análise Específica:</span>
+                <select 
+                  className="field py-1.5 px-4 text-xs font-bold"
+                  value={period}
+                  onChange={e => setPeriod(e.target.value as any)}
+                >
+                  <option value="today">Hoje</option>
+                  <option value="week">Última Semana</option>
+                  <option value="month">Este Mês</option>
+                  <option value="total">Total Acumulado</option>
+                </select>
                <select 
                  className="field py-1.5 px-4 text-xs font-bold"
                  value={selectedBalsaId}
@@ -209,10 +301,11 @@ export default function Dashboard() {
             variants={containerVariants}
             initial="hidden"
             animate="show"
-            className="grid grid-cols-1 md:grid-cols-3 gap-6"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6"
           >
-            <Metric label="Total de Balsas" value={balsasData.length} icon={<Package size={14} />} badge="CADASTRADAS" badgeVariant="neutral" />
-            <Metric label="Em Andamento" value={balsasData.filter(b => b.percentual_concluido < 1 && b.percentual_concluido > 0).length} icon={<Activity size={14} />} badge="PRODUZINDO" badgeVariant="warning" />
+            <Metric label="Produção Total" value={`${totals.totalPecas}`} icon={<Layers size={14} />} badge="PEÇAS" badgeVariant="success" />
+            <Metric label="Volume Total" value={`${(totals.totalPeso / 1000).toFixed(1)}t`} icon={<Weight size={14} />} badge="TONELADAS" badgeVariant="success" />
+            <Metric label="Balsas Ativas" value={balsasData.filter(b => b.percentual_concluido < 1 && b.percentual_concluido > 0).length} icon={<Activity size={14} />} badge="PRODUZINDO" badgeVariant="warning" />
             <Metric label="Concluídas" value={balsasData.filter(b => b.percentual_concluido >= 1).length} icon={<CheckCircle2 size={14} />} badge="FINALIZADAS" badgeVariant="success" />
           </motion.section>
 
@@ -220,7 +313,7 @@ export default function Dashboard() {
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="glass-card p-0 overflow-hidden"
+            className="glass-card p-0 overflow-hidden mb-6"
           >
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Resumo por Balsa</h3>
@@ -270,6 +363,40 @@ export default function Dashboard() {
                </table>
             </div>
           </motion.div>
+
+          {/* Análise de Paradas (Downtime Analysis) */}
+          <motion.section 
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+            className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6"
+          >
+             <div className="lg:col-span-1">
+                <Metric 
+                  label="Tempo de Máquina Parada" 
+                  value={`${(stopStats.totalMin / 60).toFixed(1)}h`} 
+                  icon={<AlertTriangle size={14} />} 
+                  badge={stopStats.totalMin > 120 ? "ALERTA" : "NORMAL"} 
+                  badgeVariant={stopStats.totalMin > 120 ? "danger" : "neutral"} 
+                />
+             </div>
+             
+             <div className="lg:col-span-2 glass-card p-6 min-h-[300px] flex flex-col">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-6 flex items-center gap-2">
+                   <AlertTriangle size={14} className="text-red-500" /> Principais Motivos de Parada (Minutos)
+                </h3>
+                <div className="flex-1 w-full h-[200px]">
+                   <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={stopStats.reasons.slice(0, 5)} layout="vertical">
+                         <XAxis type="number" hide />
+                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 'bold'}} width={120} />
+                         <Tooltip cursor={{ fill: '#F8FAFC' }} />
+                         <Bar dataKey="value" fill="#EF4444" radius={[0, 4, 4, 0]} barSize={20} />
+                      </BarChart>
+                   </ResponsiveContainer>
+                </div>
+             </div>
+          </motion.section>
         </>
       ) : (
         <>
@@ -304,11 +431,11 @@ export default function Dashboard() {
 
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Gráfico 1: % Concluído por Painel */}
-                <div className="glass-card p-6 min-h-[400px] flex flex-col">
+                <div className="glass-card p-6 min-h-[400px] flex flex-col" style={{ minHeight: '400px' }}>
                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-6 flex items-center gap-2">
-                      <Activity size={14} className="text-primary" /> % Concluído por Painel
+                      <BarChart3 size={14} className="text-primary" /> Status por Painel (Nestings)
                    </h3>
-                   <div className="flex-1 w-full">
+                   <div className="flex-1 w-full" style={{ height: '300px' }}>
                       <ResponsiveContainer width="100%" height="100%">
                          <BarChart data={panelStats} layout="vertical" margin={{ left: 40, right: 40 }}>
                             <XAxis type="number" hide domain={[0, 100]} />
@@ -321,11 +448,11 @@ export default function Dashboard() {
                 </div>
 
                 {/* Gráfico 2: Pendentes por Painel */}
-                <div className="glass-card p-6 min-h-[400px] flex flex-col">
+                <div className="glass-card p-6 min-h-[400px] flex flex-col" style={{ minHeight: '400px' }}>
                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-6 flex items-center gap-2">
                       <Layers size={14} className="text-red-500" /> Nestings Pendentes por Painel
                    </h3>
-                   <div className="flex-1 w-full">
+                   <div className="flex-1 w-full" style={{ height: '300px' }}>
                       <ResponsiveContainer width="100%" height="100%">
                          <BarChart data={panelStats} layout="vertical" margin={{ left: 40, right: 40 }}>
                             <XAxis type="number" hide />
@@ -344,10 +471,11 @@ export default function Dashboard() {
                    <thead>
                       <tr className="bg-slate-50 text-[9px] font-black uppercase text-slate-400 border-b border-slate-100">
                          <th className="p-4">Painel</th>
-                         <th className="p-4">Total Nestings</th>
-                         <th className="p-4">Concluídos</th>
-                         <th className="p-4">Pendentes</th>
-                         <th className="p-4">% Conclusão</th>
+                         <th className="p-4">Nesting (Final/Total)</th>
+                         <th className="p-4 text-right">Peso Total (kg)</th>
+                         <th className="p-4 text-right">Falta Cortar (kg)</th>
+                         <th className="p-4 text-right">Tempo Restante</th>
+                         <th className="p-4 text-center">% Concl.</th>
                          <th className="p-4">Status</th>
                       </tr>
                    </thead>
@@ -355,17 +483,20 @@ export default function Dashboard() {
                       {panelStats.map(p => (
                         <tr key={p.painel} className="hover:bg-slate-50 transition-colors">
                            <td className="p-4 font-black text-xs text-slate-800">{p.painel}</td>
-                           <td className="p-4 text-xs font-bold">{p.total}</td>
-                           <td className="p-4 text-xs font-bold text-green-600">{p.finalizados}</td>
-                           <td className="p-4 text-xs font-bold text-red-400">{p.pendentes}</td>
-                           <td className="p-4">
-                              <span className="text-[10px] font-black">{p.percentual.toFixed(1)}%</span>
+                           <td className="p-4 text-xs font-bold">{p.finalizados} / {p.total}</td>
+                           <td className="p-4 text-right text-xs font-bold text-slate-600">{(p.pesoTotal || 0).toFixed(1)}</td>
+                           <td className="p-4 text-right text-xs font-black text-red-500">{((p.pesoTotal || 0) - (p.pesoFinalizado || 0)).toFixed(1)}</td>
+                           <td className="p-4 text-right text-xs font-black text-primary">
+                              {format(new Date(0,0,0,0,0, (p.tempoPendente || 0) * 86400), "HH:mm")}
+                           </td>
+                           <td className="p-4 text-center">
+                              <span className="text-[10px] font-black">{(p.percentual || 0).toFixed(1)}%</span>
                            </td>
                            <td className="p-4">
                               <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
-                                p.percentual >= 100 ? 'bg-green-50 text-green-600 border-green-100' : 'bg-slate-50 text-slate-400 border-slate-100'
+                                (p.percentual || 0) >= 100 ? 'bg-green-50 text-green-600 border-green-100' : 'bg-slate-50 text-slate-400 border-slate-100'
                               }`}>
-                                 {p.percentual >= 100 ? 'CONCLUÍDO' : 'EM ANDAMENTO'}
+                                 {(p.percentual || 0) >= 100 ? 'CONCLUÍDO' : 'EM CORTE'}
                               </span>
                            </td>
                         </tr>
