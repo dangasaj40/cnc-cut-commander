@@ -10,15 +10,16 @@ import {
   LogOut,
   Settings,
   ShieldAlert,
-  Cpu
+  Cpu,
+  Package
 } from "lucide-react";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "supervisor", "viewer"] },
-  { to: "/producao", label: "Corte", icon: PlusCircle, roles: ["admin", "supervisor"] },
-  { to: "/historico", label: "Histórico", icon: History, roles: ["admin", "supervisor", "viewer"] },
-  { to: "/operadores", label: "Equipe", icon: Users, roles: ["admin", "supervisor"] },
-  { to: "/catalogo", label: "Catálogo", icon: Library, roles: ["admin", "supervisor", "viewer"] },
+  { to: "/balsas", label: "Balsas", icon: Package, roles: ["admin", "supervisor"] },
+  { to: "/emissao", label: "Emissão", icon: PlusCircle, roles: ["admin", "supervisor"] },
+  { to: "/retorno", label: "Baixa de Produção", icon: History, roles: ["admin", "supervisor", "viewer"] },
+  { to: "/catalogo", label: "Nestings", icon: Library, roles: ["admin", "supervisor", "viewer"] },
 ] as const;
 
 export function AppShell({ children }: { children?: ReactNode }) {

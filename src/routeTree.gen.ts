@@ -10,13 +10,14 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsuariosRouteImport } from './routes/usuarios'
+import { Route as RetornoRouteImport } from './routes/retorno'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as ProducaoRouteImport } from './routes/producao'
 import { Route as OperadoresRouteImport } from './routes/operadores'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as HistoricoRouteImport } from './routes/historico'
+import { Route as EmissaoRouteImport } from './routes/emissao'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as CatalogoRouteImport } from './routes/catalogo'
+import { Route as BalsasRouteImport } from './routes/balsas'
 import { Route as IndexRouteImport } from './routes/index'
 
 const UsuariosRoute = UsuariosRouteImport.update({
@@ -24,14 +25,14 @@ const UsuariosRoute = UsuariosRouteImport.update({
   path: '/usuarios',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RetornoRoute = RetornoRouteImport.update({
+  id: '/retorno',
+  path: '/retorno',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProducaoRoute = ProducaoRouteImport.update({
-  id: '/producao',
-  path: '/producao',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OperadoresRoute = OperadoresRouteImport.update({
@@ -44,9 +45,9 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HistoricoRoute = HistoricoRouteImport.update({
-  id: '/historico',
-  path: '/historico',
+const EmissaoRoute = EmissaoRouteImport.update({
+  id: '/emissao',
+  path: '/emissao',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
@@ -59,6 +60,11 @@ const CatalogoRoute = CatalogoRouteImport.update({
   path: '/catalogo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BalsasRoute = BalsasRouteImport.update({
+  id: '/balsas',
+  path: '/balsas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -67,83 +73,90 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/balsas': typeof BalsasRoute
   '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
-  '/historico': typeof HistoricoRoute
+  '/emissao': typeof EmissaoRoute
   '/login': typeof LoginRoute
   '/operadores': typeof OperadoresRoute
-  '/producao': typeof ProducaoRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/retorno': typeof RetornoRoute
   '/usuarios': typeof UsuariosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/balsas': typeof BalsasRoute
   '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
-  '/historico': typeof HistoricoRoute
+  '/emissao': typeof EmissaoRoute
   '/login': typeof LoginRoute
   '/operadores': typeof OperadoresRoute
-  '/producao': typeof ProducaoRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/retorno': typeof RetornoRoute
   '/usuarios': typeof UsuariosRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/balsas': typeof BalsasRoute
   '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
-  '/historico': typeof HistoricoRoute
+  '/emissao': typeof EmissaoRoute
   '/login': typeof LoginRoute
   '/operadores': typeof OperadoresRoute
-  '/producao': typeof ProducaoRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/retorno': typeof RetornoRoute
   '/usuarios': typeof UsuariosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/balsas'
     | '/catalogo'
     | '/configuracoes'
-    | '/historico'
+    | '/emissao'
     | '/login'
     | '/operadores'
-    | '/producao'
     | '/reset-password'
+    | '/retorno'
     | '/usuarios'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/balsas'
     | '/catalogo'
     | '/configuracoes'
-    | '/historico'
+    | '/emissao'
     | '/login'
     | '/operadores'
-    | '/producao'
     | '/reset-password'
+    | '/retorno'
     | '/usuarios'
   id:
     | '__root__'
     | '/'
+    | '/balsas'
     | '/catalogo'
     | '/configuracoes'
-    | '/historico'
+    | '/emissao'
     | '/login'
     | '/operadores'
-    | '/producao'
     | '/reset-password'
+    | '/retorno'
     | '/usuarios'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BalsasRoute: typeof BalsasRoute
   CatalogoRoute: typeof CatalogoRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
-  HistoricoRoute: typeof HistoricoRoute
+  EmissaoRoute: typeof EmissaoRoute
   LoginRoute: typeof LoginRoute
   OperadoresRoute: typeof OperadoresRoute
-  ProducaoRoute: typeof ProducaoRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  RetornoRoute: typeof RetornoRoute
   UsuariosRoute: typeof UsuariosRoute
 }
 
@@ -156,18 +169,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UsuariosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/retorno': {
+      id: '/retorno'
+      path: '/retorno'
+      fullPath: '/retorno'
+      preLoaderRoute: typeof RetornoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reset-password': {
       id: '/reset-password'
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/producao': {
-      id: '/producao'
-      path: '/producao'
-      fullPath: '/producao'
-      preLoaderRoute: typeof ProducaoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/operadores': {
@@ -184,11 +197,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/historico': {
-      id: '/historico'
-      path: '/historico'
-      fullPath: '/historico'
-      preLoaderRoute: typeof HistoricoRouteImport
+    '/emissao': {
+      id: '/emissao'
+      path: '/emissao'
+      fullPath: '/emissao'
+      preLoaderRoute: typeof EmissaoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/configuracoes': {
@@ -205,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CatalogoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/balsas': {
+      id: '/balsas'
+      path: '/balsas'
+      fullPath: '/balsas'
+      preLoaderRoute: typeof BalsasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -217,13 +237,14 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BalsasRoute: BalsasRoute,
   CatalogoRoute: CatalogoRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
-  HistoricoRoute: HistoricoRoute,
+  EmissaoRoute: EmissaoRoute,
   LoginRoute: LoginRoute,
   OperadoresRoute: OperadoresRoute,
-  ProducaoRoute: ProducaoRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  RetornoRoute: RetornoRoute,
   UsuariosRoute: UsuariosRoute,
 }
 export const routeTree = rootRouteImport

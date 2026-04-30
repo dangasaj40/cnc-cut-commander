@@ -73,7 +73,7 @@ export default function CatalogoPage() {
     <div className="flex flex-col gap-6">
       <SectionHeader 
         code="CAT-01" 
-        title="Catálogo Técnico" 
+        title="Nestings" 
         subtitle="Consulta de componentes e planos de corte" 
       />
 

@@ -1,0 +1,3191 @@
+﻿Tentando abrir a planilha...
+Planilha aberta. Varrendo mÃ³dulos VBA...
+
+========================================
+MODULO: EstaPastaDeTrabalho
+========================================
+Private Sub Workbook_Open()
+    Application.Calculation = xlCalculationAutomatic
+End Sub
+
+
+========================================
+MODULO: Planilha1
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: Planilha2
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: Planilha3
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: Planilha4
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: Planilha5
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: Planilha6
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: Planilha7
+========================================
+Private Sub Worksheet_Change(ByVal Target As Range)
+    ' Verifica se a célula alterada foi a B4 (onde o ID_BALSA é selecionado)
+    If Not Intersect(Target, Me.Range("B4")) Is Nothing Then
+        
+        ' Evita erros se o usuário deletar várias células ao mesmo tempo
+        If Target.CountLarge > 1 Then Exit Sub
+        
+        ' Desliga os eventos temporariamente para a macro principal não disparar este evento de novo em loop
+        Application.EnableEvents = False
+        
+        On Error GoTo TrataErro
+        
+        ' Se a célula B4 não estiver vazia, roda a macro de carregar
+        If Trim(Me.Range("B4").Value) <> "" Then
+            Call Carregar_Lista_Emissao
+        End If
+
+TrataErro:
+        ' Garante que os eventos do Excel sejam religados, mesmo se der erro
+        Application.EnableEvents = True
+    End If
+End Sub
+
+
+========================================
+MODULO: Planilha8
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: Planilha9
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: Planilha10
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: Planilha11
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
+========================================
+MODULO: modControleNestingsV6
+========================================
+Option Explicit
+
+Private Const FIRST_ROW_EMISSAO As Long = 12
+Private Const FIRST_ROW_FICHA As Long = 10
+Private Const FIRST_ROW_RETORNO As Long = 12
+Private Const MAX_UI_ROWS As Long = 5000
+Private Const BALSA_NUM_MIN As Long = 1
+Private Const BALSA_NUM_MAX As Long = 999
+
+Private Const RESET_FIRST_ROW_EMISSAO As Long = 12
+Private Const RESET_FIRST_ROW_FICHA As Long = 10
+Private Const RESET_FIRST_ROW_RETORNO As Long = 12
+Private Const RESET_MAX_UI_ROWS As Long = 5000
+
+Private Const RESET_EM_ID_EMISSAO As Long = 1
+Private Const RESET_EM_STATUS As Long = 15
+
+' tblBase
+Private Const BASE_TIPO As Long = 1
+Private Const BASE_TEMPO As Long = 2
+Private Const BASE_QTD As Long = 3
+Private Const BASE_PECA As Long = 4
+Private Const BASE_DESC As Long = 5
+Private Const BASE_ESP As Long = 6
+Private Const BASE_BLOCO As Long = 9
+Private Const BASE_PAINEL As Long = 10
+Private Const BASE_NESTING As Long = 11
+
+' tblControle
+Private Const CTRL_SEQ As Long = 1
+Private Const CTRL_ID_BALSA As Long = 2
+Private Const CTRL_TIPO As Long = 3
+Private Const CTRL_NOME As Long = 4
+Private Const CTRL_BLOCO As Long = 5
+Private Const CTRL_PAINEL As Long = 6
+Private Const CTRL_NESTING As Long = 7
+Private Const CTRL_PECA As Long = 8
+Private Const CTRL_DESC As Long = 9
+Private Const CTRL_ESP As Long = 10
+Private Const CTRL_QTD As Long = 11
+Private Const CTRL_TEMPO As Long = 12
+Private Const CTRL_STATUS As Long = 13
+Private Const CTRL_ID_EMISSAO As Long = 14
+Private Const CTRL_DT_EMISSAO As Long = 15
+Private Const CTRL_MAQUINA As Long = 16
+Private Const CTRL_TURNO As Long = 17
+Private Const CTRL_DT_BAIXA As Long = 18
+Private Const CTRL_HORA_INI As Long = 19
+Private Const CTRL_HORA_FIM As Long = 20
+Private Const CTRL_PARADA As Long = 21
+Private Const CTRL_MOTIVO As Long = 22
+Private Const CTRL_OBS As Long = 23
+Private Const CTRL_CHAVE As Long = 24
+
+' tblEmissoes
+Private Const EM_ID_EMISSAO As Long = 1
+Private Const EM_DT As Long = 2
+Private Const EM_ID_BALSA As Long = 3
+Private Const EM_TIPO As Long = 4
+Private Const EM_NOME As Long = 5
+Private Const EM_MAQUINA As Long = 6
+Private Const EM_TURNO As Long = 7
+Private Const EM_BLOCO As Long = 8
+Private Const EM_PAINEL As Long = 9
+Private Const EM_NESTING As Long = 10
+Private Const EM_PECAS As Long = 11
+Private Const EM_QTD_PECAS As Long = 12
+Private Const EM_DESC As Long = 13
+Private Const EM_ESP As Long = 14
+Private Const EM_STATUS As Long = 15
+Private Const EM_OBS As Long = 16
+Private Const EM_CHAVE As Long = 17
+
+' tblRetorno
+Private Const RET_ID_EMISSAO As Long = 1
+Private Const RET_DATA As Long = 2
+Private Const RET_ID_BALSA As Long = 3
+Private Const RET_TIPO As Long = 4
+Private Const RET_NOME As Long = 5
+Private Const RET_MAQUINA As Long = 6
+Private Const RET_TURNO As Long = 7
+Private Const RET_BLOCO As Long = 8
+Private Const RET_PAINEL As Long = 9
+Private Const RET_NESTING As Long = 10
+Private Const RET_PECAS As Long = 11
+Private Const RET_HORA_INI As Long = 12
+Private Const RET_HORA_FIM As Long = 13
+Private Const RET_PARADA As Long = 14
+Private Const RET_MOTIVO As Long = 15
+Private Const RET_OBS As Long = 16
+Private Const RET_STATUS As Long = 17
+Public Sub AbrirFormCancelarEmissao_UI()
+    frmCancelarEmissao.Show
+End Sub
+Private Function wb() As Workbook
+    Set wb = ActiveWorkbook
+End Function
+
+Private Function GetWs(ByVal sheetName As String) As Worksheet
+    On Error Resume Next
+    Set GetWs = wb.Worksheets(sheetName)
+    On Error GoTo 0
+End Function
+
+Private Function GetTable(ByVal sheetName As String, ByVal tableName As String) As ListObject
+    Dim ws As Worksheet
+    Set ws = GetWs(sheetName)
+    If ws Is Nothing Then Exit Function
+    On Error Resume Next
+    Set GetTable = ws.ListObjects(tableName)
+    On Error GoTo 0
+End Function
+
+Private Sub BeginFastMode(ByRef oldCalc As XlCalculation, ByRef oldScreen As Boolean, ByRef oldEvents As Boolean, ByRef oldStatusBar As Variant)
+    With Application
+        oldCalc = .Calculation
+        oldScreen = .ScreenUpdating
+        oldEvents = .EnableEvents
+        oldStatusBar = .StatusBar
+
+        .ScreenUpdating = False
+        .EnableEvents = False
+        .DisplayStatusBar = True
+        .StatusBar = "Processando..."
+        .Calculation = xlCalculationManual
+    End With
+End Sub
+
+Private Sub EndFastMode(ByVal oldCalc As XlCalculation, ByVal oldScreen As Boolean, ByVal oldEvents As Boolean, ByVal oldStatusBar As Variant)
+    With Application
+        If oldCalc <> 0 Then .Calculation = oldCalc
+        .EnableEvents = oldEvents
+        .ScreenUpdating = oldScreen
+        .StatusBar = oldStatusBar
+    End With
+End Sub
+
+Private Function TableHasOnlyBlankRow(ByVal lo As ListObject, Optional ByVal keyCol As Long = 1) As Boolean
+    On Error GoTo Fim
+    If lo Is Nothing Then Exit Function
+    If lo.DataBodyRange Is Nothing Then
+        TableHasOnlyBlankRow = True
+    ElseIf lo.ListRows.Count = 1 And Trim$(CStr(lo.DataBodyRange.Cells(1, keyCol).Value)) = "" Then
+        TableHasOnlyBlankRow = True
+    End If
+Fim:
+End Function
+
+Private Function DataRowsCount(ByVal lo As ListObject, Optional ByVal keyCol As Long = 1) As Long
+    If lo Is Nothing Then Exit Function
+    If lo.DataBodyRange Is Nothing Then Exit Function
+    If TableHasOnlyBlankRow(lo, keyCol) Then Exit Function
+    DataRowsCount = lo.ListRows.Count
+End Function
+
+Private Function RowOrNew(ByVal lo As ListObject, Optional ByVal keyCol As Long = 1) As Range
+    If TableHasOnlyBlankRow(lo, keyCol) Then
+        Set RowOrNew = lo.DataBodyRange.Rows(1)
+    Else
+        Set RowOrNew = lo.ListRows.Add.Range
+    End If
+End Function
+
+Private Function AppendRowsToTable(ByVal lo As ListObject, ByVal data As Variant, Optional ByVal keyCol As Long = 1) As Long
+    Dim rowsToWrite As Long, colsToWrite As Long
+    Dim firstWriteRow As Long, existingRows As Long
+    Dim ws As Worksheet
+
+    If lo Is Nothing Then Exit Function
+    rowsToWrite = UBound(data, 1)
+    colsToWrite = UBound(data, 2)
+    If rowsToWrite <= 0 Or colsToWrite <= 0 Then Exit Function
+
+    Set ws = lo.Parent
+    existingRows = DataRowsCount(lo, keyCol)
+
+    If lo.DataBodyRange Is Nothing Then
+        lo.Resize lo.Range.Resize(1 + rowsToWrite, lo.Range.Columns.Count)
+        firstWriteRow = lo.HeaderRowRange.Row + 1
+    ElseIf TableHasOnlyBlankRow(lo, keyCol) Then
+        If rowsToWrite > 1 Then
+            lo.Resize lo.Range.Resize(lo.Range.Rows.Count + rowsToWrite - 1, lo.Range.Columns.Count)
+        End If
+        firstWriteRow = lo.DataBodyRange.Row
+    Else
+        lo.Resize lo.Range.Resize(lo.Range.Rows.Count + rowsToWrite, lo.Range.Columns.Count)
+        firstWriteRow = lo.DataBodyRange.Row + existingRows
+    End If
+
+    ws.Range(ws.Cells(firstWriteRow, lo.Range.Column), _
+             ws.Cells(firstWriteRow + rowsToWrite - 1, lo.Range.Column + colsToWrite - 1)).Value = data
+
+    AppendRowsToTable = firstWriteRow
+End Function
+
+Private Function NextBalsaID(ByVal lo As ListObject) As String
+    Dim i As Long, qtd As Long
+    qtd = 0
+
+    If Not lo Is Nothing Then
+        If Not lo.DataBodyRange Is Nothing Then
+            For i = 1 To lo.ListRows.Count
+                If Trim$(CStr(lo.DataBodyRange.Cells(i, 1).Value)) <> "" Then qtd = qtd + 1
+            Next i
+        End If
+    End If
+
+    NextBalsaID = "BALSA-" & Format$(qtd + 1, "000")
+End Function
+
+Private Function BuildBalsaID(ByVal tipo As String, ByVal nomeBalsa As String) As String
+    BuildBalsaID = UCase$(Trim$(tipo)) & "-" & UCase$(Replace(Trim$(nomeBalsa), " ", ""))
+End Function
+
+Private Function FormatBalsaNumero(ByVal valor As Variant) As String
+    Dim n As Long
+
+    If IsNumeric(valor) Then
+        n = CLng(valor)
+        If n < BALSA_NUM_MIN Or n > BALSA_NUM_MAX Then Exit Function
+        FormatBalsaNumero = Format$(n, "00")
+    End If
+End Function
+
+Private Function GetUsedBalsaNumbers(ByVal lo As ListObject, ByVal tipo As String) As String
+    Dim arrCad As Variant
+    Dim i As Long
+    Dim dict As Object
+    Dim numero As String
+
+    Set dict = CreateObject("Scripting.Dictionary")
+
+    If lo Is Nothing Then Exit Function
+    If lo.DataBodyRange Is Nothing Then Exit Function
+
+    arrCad = lo.DataBodyRange.Value2
+    For i = 1 To UBound(arrCad, 1)
+        If UCase$(NzText(arrCad(i, 2))) = UCase$(tipo) Then
+            numero = NzText(arrCad(i, 3))
+            If numero <> "" Then
+                If Not dict.Exists(numero) Then dict.Add numero, 1
+            End If
+        End If
+    Next i
+
+    If dict.Count > 0 Then GetUsedBalsaNumbers = JoinDictKeys(dict, ", ")
+End Function
+
+Private Function GetNextSuggestedBalsaNumber(ByVal lo As ListObject, ByVal tipo As String) As Long
+    Dim arrCad As Variant
+    Dim i As Long
+    Dim maior As Long
+    Dim numero As String
+
+    GetNextSuggestedBalsaNumber = BALSA_NUM_MIN
+
+    If lo Is Nothing Then Exit Function
+    If lo.DataBodyRange Is Nothing Then Exit Function
+
+    arrCad = lo.DataBodyRange.Value2
+    For i = 1 To UBound(arrCad, 1)
+        If UCase$(NzText(arrCad(i, 2))) = UCase$(tipo) Then
+            numero = NzText(arrCad(i, 3))
+            If IsNumeric(numero) Then
+                If CLng(numero) > maior Then maior = CLng(numero)
+            End If
+        End If
+    Next i
+
+    If maior >= BALSA_NUM_MIN Then GetNextSuggestedBalsaNumber = maior + 1
+    If GetNextSuggestedBalsaNumber > BALSA_NUM_MAX Then GetNextSuggestedBalsaNumber = BALSA_NUM_MAX
+End Function
+Private Function AskBalsaType() As String
+    Dim resp As Variant
+    Dim msg As String
+    Dim valor As String
+
+    msg = "Selecione o tipo da balsa:" & vbCrLf & vbCrLf & _
+          "1 - BOX" & vbCrLf & _
+          "2 - RAKE" & vbCrLf & vbCrLf & _
+          "Digite o numero da opcao desejada."
+
+    Do
+        resp = Application.InputBox(msg, "Cadastrar balsa", Type:=2)
+
+        If VarType(resp) = vbBoolean Then Exit Function
+
+        valor = UCase$(Trim$(CStr(resp)))
+
+        Select Case valor
+            Case "1", "BOX"
+                AskBalsaType = "BOX"
+                Exit Function
+            Case "2", "RAKE"
+                AskBalsaType = "RAKE"
+                Exit Function
+            Case Else
+                MsgBox "Opcao invalida. Digite 1 para BOX ou 2 para RAKE.", vbExclamation
+        End Select
+    Loop
+End Function
+
+Private Function AskBalsaNumero(ByVal lo As ListObject, ByVal tipo As String) As String
+    Dim entrada As Variant
+    Dim usados As String
+    Dim sugestao As Long
+    Dim numeroFmt As String
+    Dim msg As String
+
+    usados = GetUsedBalsaNumbers(lo, tipo)
+    sugestao = GetNextSuggestedBalsaNumber(lo, tipo)
+
+    Do
+        msg = "Informe a numeracao da balsa " & tipo & "." & vbCrLf & _
+              "Digite apenas o numero." & vbCrLf & _
+              "Ex.: 1 vira 01." & vbCrLf & _
+              "Faixa permitida: " & BALSA_NUM_MIN & " a " & BALSA_NUM_MAX & "."
+
+        If usados <> "" Then
+            msg = msg & vbCrLf & vbCrLf & "Ja cadastradas para " & tipo & ": " & usados
+        End If
+
+        entrada = Application.InputBox(msg, "Cadastrar balsa", sugestao, Type:=1)
+
+        If VarType(entrada) = vbBoolean Then Exit Function
+
+        numeroFmt = FormatBalsaNumero(entrada)
+        If numeroFmt <> "" Then
+            AskBalsaNumero = numeroFmt
+            Exit Function
+        End If
+
+        MsgBox "Numeracao invalida. Informe um numero inteiro entre " & BALSA_NUM_MIN & " e " & BALSA_NUM_MAX & ".", vbExclamation
+    Loop
+End Function
+
+Private Function IsSelectedMark(ByVal v As Variant) As Boolean
+    Dim Txt As String
+    Txt = UCase$(Trim$(CStr(v)))
+    IsSelectedMark = (Txt = "X" Or Txt = "SIM" Or Txt = "S" Or Txt = "1" Or Txt = "OK")
+End Function
+
+Private Function NzText(ByVal v As Variant) As String
+    If IsError(v) Or IsNull(v) Then
+        NzText = ""
+    Else
+        NzText = Trim$(CStr(v))
+    End If
+End Function
+
+Private Sub AddUniqueValue(ByVal dict As Object, ByVal keyText As String)
+    keyText = Trim$(keyText)
+    If keyText <> "" Then
+        If Not dict.Exists(keyText) Then dict.Add keyText, 1
+    End If
+End Sub
+
+Private Function JoinDictKeys(ByVal dict As Object, Optional ByVal sep As String = ", ") As String
+    Dim k As Variant, Txt As String
+    Txt = ""
+
+    For Each k In dict.Keys
+        If Txt <> "" Then Txt = Txt & sep
+        Txt = Txt & CStr(k)
+    Next k
+
+    JoinDictKeys = Txt
+End Function
+
+Private Function LastUsedRow(ByVal ws As Worksheet, ByVal colLetter As String, ByVal firstDataRow As Long) As Long
+    Dim r As Long
+    r = ws.Cells(ws.Rows.Count, colLetter).End(xlUp).Row
+
+    If r < firstDataRow Then
+        LastUsedRow = firstDataRow - 1
+    Else
+        LastUsedRow = r
+    End If
+End Function
+
+Private Function LastMeaningfulFichaRow(ByVal ws As Worksheet) As Long
+    Dim r As Long
+
+    For r = MAX_UI_ROWS To FIRST_ROW_FICHA Step -1
+        If Application.WorksheetFunction.CountA(ws.Range("A" & r & ":J" & r)) > 0 Then
+            LastMeaningfulFichaRow = r
+            Exit Function
+        End If
+    Next r
+
+    LastMeaningfulFichaRow = 9
+End Function
+
+Private Sub ConfigurarImpressaoFicha(ByVal ws As Worksheet, ByVal lastDataRow As Long)
+    Dim finalRow As Long
+
+    If lastDataRow < 9 Then lastDataRow = 9
+    finalRow = lastDataRow
+
+    On Error Resume Next
+    ws.ResetAllPageBreaks
+    On Error GoTo 0
+
+    ws.DisplayPageBreaks = False
+
+    With ws.PageSetup
+        .PrintArea = "$A$1:$J$" & finalRow
+        .PrintTitleRows = "$1:$9"
+        .Zoom = False
+        .FitToPagesWide = 1
+        .FitToPagesTall = False
+        .Orientation = xlLandscape
+        .CenterHorizontally = True
+        .CenterVertically = False
+    End With
+End Sub
+
+Private Sub FillCadBalsaFormulas(ByVal ws As Worksheet, ByVal r As Long)
+ws.Cells(r, 4).Formula = "=IF(C" & r & "<>"""",TODAY(),"""")"
+ws.Cells(r, 5).Formula = "=IF(A" & r & "<>"""",SUMPRODUCT((tblControle[ID_BALSA]=A" & r & ")*(tblControle[NESTING]<>"""")/((tblControle[NESTING]="""")+(tblControle[ID_BALSA]<>A" & r & ")+COUNTIFS(tblControle[ID_BALSA],A" & r & ",tblControle[NESTING],tblControle[NESTING]&""""))),"""")"
+ws.Cells(r, 6).Formula = "=IF(A" & r & "<>"""",SUMPRODUCT((tblControle[ID_BALSA]=A" & r & ")*(((tblControle[STATUS_PROCESSO]=""Em processamento"")+(tblControle[STATUS_PROCESSO]=""Finalizado""))>0)*(tblControle[NESTING]<>"""")/((tblControle[NESTING]="""")+(tblControle[ID_BALSA]<>A" & r & ")+COUNTIFS(tblControle[ID_BALSA],A" & r & ",tblControle[NESTING],tblControle[NESTING]&""""))),"""")"
+ws.Cells(r, 7).Formula = "=IF(A" & r & "<>"""",SUMPRODUCT((tblControle[ID_BALSA]=A" & r & ")*(tblControle[STATUS_PROCESSO]=""Finalizado"")*(tblControle[NESTING]<>"""")/((tblControle[NESTING]="""")+(tblControle[ID_BALSA]<>A" & r & ")+COUNTIFS(tblControle[ID_BALSA],A" & r & ",tblControle[NESTING],tblControle[NESTING]&""""))),"""")"
+ws.Cells(r, 8).Formula = "=IF(A" & r & "<>"""",IF(E" & r & "-G" & r & ">0,E" & r & "-G" & r & ",0),"""")"
+ws.Cells(r, 9).Formula = "=IFERROR(G" & r & "/E" & r & ",0)"
+ws.Cells(r, 10).Formula = "=IF(A" & r & "="""","""",IF(E" & r & "=0,""Sem base"",IF(G" & r & ">=E" & r & ",""Concluida"",IF(F" & r & ">0,""Em andamento"",""Nao iniciada""))))"
+ws.Cells(r, 9).NumberFormat = "0.0%"
+End Sub
+
+Private Sub ClearEmissionArea()
+    Dim ws As Worksheet
+    Set ws = GetWs("EMISSAO")
+    If ws Is Nothing Then Exit Sub
+
+    ws.Range("A" & FIRST_ROW_EMISSAO & ":G" & MAX_UI_ROWS).ClearContents
+End Sub
+
+Private Sub ClearFichaArea()
+    Dim ws As Worksheet
+    Set ws = GetWs("FICHA_OPERADOR")
+    If ws Is Nothing Then Exit Sub
+    ws.Range("B4:B7,F4:F8").ClearContents
+    ws.Range("A" & FIRST_ROW_FICHA & ":J" & MAX_UI_ROWS).ClearContents
+End Sub
+Private Sub ClearRetornoArea()
+    Dim ws As Worksheet
+    Set ws = GetWs("RETORNO_BAIXA")
+    If ws Is Nothing Then Exit Sub
+    ws.Range("A" & FIRST_ROW_RETORNO & ":J" & MAX_UI_ROWS).ClearContents
+End Sub
+
+Private Function DictToSingleColumnArray(ByVal dict As Object) As Variant
+    Dim arr() As Variant
+    Dim i As Long, k As Variant
+
+    If dict Is Nothing Then Exit Function
+    If dict.Count = 0 Then Exit Function
+
+    ReDim arr(1 To dict.Count, 1 To 1)
+    i = 0
+    For Each k In dict.Keys
+        i = i + 1
+        arr(i, 1) = k
+    Next k
+
+    DictToSingleColumnArray = arr
+End Function
+
+
+Public Sub Atualizar_Lista_Retorno_Pendente()
+    Dim wsR As Worksheet, wsPar As Worksheet
+    Dim loEm As ListObject
+    Dim arrEm As Variant
+    Dim dictPend As Object
+    Dim i As Long, lastRow As Long
+    Dim idAtual As String, statusEm As String, idEmissao As String
+    Dim oldCalc As XlCalculation, oldScreen As Boolean, oldEvents As Boolean, oldStatusBar As Variant
+
+    oldCalc = Application.Calculation
+    oldScreen = Application.ScreenUpdating
+    oldEvents = Application.EnableEvents
+    oldStatusBar = Application.StatusBar
+    On Error GoTo TrataErro
+
+    Set wsR = GetWs("RETORNO_BAIXA")
+    Set wsPar = GetWs("PARAMETROS")
+    Set loEm = GetTable("EMISSOES", "tblEmissoes")
+
+    If wsR Is Nothing Or wsPar Is Nothing Or loEm Is Nothing Then Exit Sub
+
+    BeginFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+
+    idAtual = NzText(wsR.Range("B4").Value)
+    wsPar.Range("Q5:Q1000").ClearContents
+    Set dictPend = CreateObject("Scripting.Dictionary")
+
+    If Not loEm.DataBodyRange Is Nothing Then
+        arrEm = loEm.DataBodyRange.Value2
+        For i = 1 To UBound(arrEm, 1)
+            idEmissao = NzText(arrEm(i, EM_ID_EMISSAO))
+            statusEm = NzText(arrEm(i, EM_STATUS))
+
+            If idEmissao <> "" And UCase$(statusEm) <> "FINALIZADO" Then
+                If Not dictPend.Exists(idEmissao) Then dictPend.Add idEmissao, 1
+            End If
+        Next i
+    End If
+
+    If dictPend.Count > 0 Then
+        wsPar.Range("Q5").Resize(dictPend.Count, 1).Value = DictToSingleColumnArray(dictPend)
+        lastRow = 4 + dictPend.Count
+    Else
+        wsPar.Range("Q5").Value = ""
+        lastRow = 5
+    End If
+
+    On Error Resume Next
+    wb.Names("ListaRetornoPendente").Delete
+    On Error GoTo TrataErro
+
+    wb.Names.Add Name:="ListaRetornoPendente", RefersTo:="=" & wsPar.Name & "!$Q$5:$Q$" & lastRow
+
+    With wsR.Range("B4").Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:="=ListaRetornoPendente"
+        .IgnoreBlank = True
+        .InCellDropdown = True
+        .InputTitle = "ID Emissao"
+        .ErrorTitle = "Valor invalido"
+        .InputMessage = "Selecione um ID_EMISSAO com nesting pendente de baixa."
+        .ErrorMessage = "Escolha um ID_EMISSAO disponivel na lista."
+        .ShowInput = True
+        .ShowError = True
+    End With
+
+    If idAtual <> "" Then
+        If dictPend.Exists(idAtual) Then
+            wsR.Range("B4").Value = idAtual
+        Else
+            wsR.Range("B4").ClearContents
+            ClearRetornoArea
+        End If
+    End If
+
+SaidaLimpa:
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    Exit Sub
+
+TrataErro:
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox "Erro ao atualizar lista de retorno pendente: " & Err.Description, vbCritical
+End Sub
+
+Public Sub Atualizar_Listas_Base()
+    Dim loBase As ListObject
+    Dim wsPar As Worksheet
+    Dim arrBase As Variant
+    Dim i As Long
+    Dim dictTipo As Object, dictBloco As Object, dictPainel As Object
+    Dim oldCalc As XlCalculation, oldScreen As Boolean, oldEvents As Boolean, oldStatusBar As Variant
+
+    oldCalc = Application.Calculation
+    oldScreen = Application.ScreenUpdating
+    oldEvents = Application.EnableEvents
+    oldStatusBar = Application.StatusBar
+    On Error GoTo TrataErro
+
+    Set loBase = GetTable("BASE_DADOS", "tblBase")
+    Set wsPar = GetWs("PARAMETROS")
+
+    If loBase Is Nothing Or wsPar Is Nothing Then
+        MsgBox "Nao encontrei BASE_DADOS/tblBase ou PARAMETROS.", vbCritical
+        Exit Sub
+    End If
+
+    Set dictTipo = CreateObject("Scripting.Dictionary")
+    Set dictBloco = CreateObject("Scripting.Dictionary")
+    Set dictPainel = CreateObject("Scripting.Dictionary")
+
+    BeginFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+
+    If Not loBase.DataBodyRange Is Nothing Then
+        arrBase = loBase.DataBodyRange.Value2
+
+        For i = 1 To UBound(arrBase, 1)
+            AddUniqueValue dictTipo, NzText(arrBase(i, BASE_TIPO))
+            AddUniqueValue dictBloco, NzText(arrBase(i, BASE_BLOCO))
+            AddUniqueValue dictPainel, NzText(arrBase(i, BASE_PAINEL))
+        Next i
+    End If
+
+    wsPar.Range("A5:A500").ClearContents
+    wsPar.Range("M5:M1000").ClearContents
+    wsPar.Range("O5:O1000").ClearContents
+
+    If dictTipo.Count > 0 Then wsPar.Range("A5").Resize(dictTipo.Count, 1).Value = DictToSingleColumnArray(dictTipo)
+    If dictBloco.Count > 0 Then wsPar.Range("M5").Resize(dictBloco.Count, 1).Value = DictToSingleColumnArray(dictBloco)
+    If dictPainel.Count > 0 Then wsPar.Range("O5").Resize(dictPainel.Count, 1).Value = DictToSingleColumnArray(dictPainel)
+
+SaidaLimpa:
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    Exit Sub
+
+TrataErro:
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox "Erro ao atualizar listas base: " & Err.Description, vbCritical
+End Sub
+
+Public Sub Cadastrar_Balsa_e_Carregar_Base()
+    Dim wsCad As Worksheet, loCad As ListObject
+    Dim loBase As ListObject, loCtrl As ListObject
+    Dim linhaCad As Range
+    Dim tipo As String, nomeBalsa As String, idBalsa As String
+    Dim i As Long, qtd As Long, ctrlCols As Long, seqInicial As Long
+    Dim existe As Boolean, outRow As Long
+    Dim arrBase As Variant, arrCad As Variant, arrCtrl() As Variant
+    Dim oldCalc As XlCalculation, oldScreen As Boolean, oldEvents As Boolean, oldStatusBar As Variant
+
+    oldCalc = Application.Calculation
+    oldScreen = Application.ScreenUpdating
+    oldEvents = Application.EnableEvents
+    oldStatusBar = Application.StatusBar
+    On Error GoTo TrataErro
+
+    Set wsCad = GetWs("CAD_BALSA")
+    Set loCad = GetTable("CAD_BALSA", "tblBalsas")
+    Set loBase = GetTable("BASE_DADOS", "tblBase")
+    Set loCtrl = GetTable("CONTROLE_NESTINGS", "tblControle")
+
+    If wsCad Is Nothing Or loCad Is Nothing Or loBase Is Nothing Or loCtrl Is Nothing Then
+        MsgBox "Faltam abas ou tabelas obrigatorias do sistema.", vbCritical
+        Exit Sub
+    End If
+
+    If loBase.DataBodyRange Is Nothing Then
+        MsgBox "A BASE_DADOS esta vazia.", vbExclamation
+        Exit Sub
+    End If
+
+    tipo = AskBalsaType()
+    If tipo = "" Then Exit Sub
+
+    nomeBalsa = AskBalsaNumero(loCad, tipo)
+    If nomeBalsa = "" Then Exit Sub
+
+    idBalsa = BuildBalsaID(tipo, nomeBalsa)
+
+    BeginFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+
+    If Not loCad.DataBodyRange Is Nothing Then
+        arrCad = loCad.DataBodyRange.Value2
+        For i = 1 To UBound(arrCad, 1)
+            If UCase$(NzText(arrCad(i, 1))) = idBalsa Then
+                existe = True
+                Exit For
+            End If
+        Next i
+    End If
+
+    If existe Then
+        EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+        MsgBox "Esta balsa ja esta cadastrada." & vbCrLf & _
+               "ID: " & idBalsa, vbExclamation
+        Exit Sub
+    End If
+
+    Set linhaCad = RowOrNew(loCad, 1)
+    linhaCad.Cells(1, 1).Value = idBalsa
+    linhaCad.Cells(1, 2).Value = tipo
+    linhaCad.Cells(1, 3).Value = nomeBalsa
+    FillCadBalsaFormulas wsCad, linhaCad.Row
+
+    arrBase = loBase.DataBodyRange.Value2
+    ctrlCols = loCtrl.Range.Columns.Count
+    seqInicial = DataRowsCount(loCtrl, 1)
+    qtd = 0
+
+    For i = 1 To UBound(arrBase, 1)
+        If UCase$(NzText(arrBase(i, BASE_TIPO))) = tipo And NzText(arrBase(i, BASE_NESTING)) <> "" Then
+            qtd = qtd + 1
+        End If
+    Next i
+
+    If qtd > 0 Then
+        ReDim arrCtrl(1 To qtd, 1 To ctrlCols)
+        outRow = 0
+
+        For i = 1 To UBound(arrBase, 1)
+            If UCase$(NzText(arrBase(i, BASE_TIPO))) = tipo And NzText(arrBase(i, BASE_NESTING)) <> "" Then
+                outRow = outRow + 1
+                arrCtrl(outRow, CTRL_SEQ) = seqInicial + outRow
+                arrCtrl(outRow, CTRL_ID_BALSA) = idBalsa
+                arrCtrl(outRow, CTRL_TIPO) = tipo
+                arrCtrl(outRow, CTRL_NOME) = nomeBalsa
+                arrCtrl(outRow, CTRL_BLOCO) = arrBase(i, BASE_BLOCO)
+                arrCtrl(outRow, CTRL_PAINEL) = arrBase(i, BASE_PAINEL)
+                arrCtrl(outRow, CTRL_NESTING) = arrBase(i, BASE_NESTING)
+                arrCtrl(outRow, CTRL_PECA) = arrBase(i, BASE_PECA)
+                arrCtrl(outRow, CTRL_DESC) = arrBase(i, BASE_DESC)
+                arrCtrl(outRow, CTRL_ESP) = arrBase(i, BASE_ESP)
+                arrCtrl(outRow, CTRL_QTD) = arrBase(i, BASE_QTD)
+                arrCtrl(outRow, CTRL_TEMPO) = arrBase(i, BASE_TEMPO)
+                arrCtrl(outRow, CTRL_STATUS) = "Disponivel"
+                arrCtrl(outRow, CTRL_CHAVE) = idBalsa & "|" & NzText(arrBase(i, BASE_NESTING))
+            End If
+        Next i
+
+        AppendRowsToTable loCtrl, arrCtrl, 1
+    End If
+
+    Atualizar_Listas_Base
+    wsCad.Calculate
+    GetWs("DASHBOARD").Calculate
+
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+
+    If qtd = 0 Then
+        MsgBox "A balsa foi cadastrada, mas nao encontrei linhas desse tipo na BASE_DADOS.", vbExclamation
+    Else
+        MsgBox "Balsa cadastrada com sucesso." & vbCrLf & _
+               "ID: " & idBalsa & vbCrLf & _
+               "Tipo: " & tipo & vbCrLf & _
+               "Numero/Nome: " & nomeBalsa & vbCrLf & _
+               "Linhas carregadas em CONTROLE_NESTINGS: " & qtd, vbInformation
+    End If
+    Exit Sub
+
+TrataErro:
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox "Erro ao cadastrar balsa: " & Err.Description, vbCritical
+End Sub
+
+Private Function BuildAvailableNestings(ByVal idBalsa As String, ByVal filtroBloco As String, ByVal filtroPainel As String) As Object
+
+    Dim loCtrl As ListObject
+    Dim arrCtrl As Variant
+    Dim i As Long
+    Dim nesting As String, bloco As String, painel As String, statusP As String
+    Dim info As Object, dict As Object
+    Dim pecas As Object, descs As Object, blocos As Object, painels As Object, esps As Object
+
+    Set loCtrl = GetTable("CONTROLE_NESTINGS", "tblControle")
+    If loCtrl Is Nothing Then Exit Function
+    If loCtrl.DataBodyRange Is Nothing Then Exit Function
+
+    Set dict = CreateObject("Scripting.Dictionary")
+    arrCtrl = loCtrl.DataBodyRange.Value2
+
+    For i = 1 To UBound(arrCtrl, 1)
+        If NzText(arrCtrl(i, CTRL_ID_BALSA)) = idBalsa Then
+            nesting = NzText(arrCtrl(i, CTRL_NESTING))
+            bloco = NzText(arrCtrl(i, CTRL_BLOCO))
+            painel = NzText(arrCtrl(i, CTRL_PAINEL))
+            statusP = NzText(arrCtrl(i, CTRL_STATUS))
+
+            If nesting <> "" And statusP = "Disponivel" Then
+                If (filtroBloco = "" Or bloco = filtroBloco) And (filtroPainel = "" Or painel = filtroPainel) Then
+
+                    If Not dict.Exists(nesting) Then
+                        Set info = CreateObject("Scripting.Dictionary")
+                        Set pecas = CreateObject("Scripting.Dictionary")
+                        Set descs = CreateObject("Scripting.Dictionary")
+                        Set blocos = CreateObject("Scripting.Dictionary")
+                        Set painels = CreateObject("Scripting.Dictionary")
+                        Set esps = CreateObject("Scripting.Dictionary")
+
+                        AddUniqueValue pecas, NzText(arrCtrl(i, CTRL_PECA))
+                        AddUniqueValue descs, NzText(arrCtrl(i, CTRL_DESC))
+                        AddUniqueValue blocos, bloco
+                        AddUniqueValue painels, painel
+                        AddUniqueValue esps, NzText(arrCtrl(i, CTRL_ESP))
+
+                        info.Add "pecas", pecas
+                        info.Add "descs", descs
+                        info.Add "blocos", blocos
+                        info.Add "painels", painels
+                        info.Add "esps", esps
+                        info.Add "esp", NzText(arrCtrl(i, CTRL_ESP))
+                        info.Add "tempo", arrCtrl(i, CTRL_TEMPO)
+                        info.Add "countRows", 1
+
+                        dict.Add nesting, info
+                    Else
+                        Set info = dict(nesting)
+
+                        AddUniqueValue info("pecas"), NzText(arrCtrl(i, CTRL_PECA))
+                        AddUniqueValue info("descs"), NzText(arrCtrl(i, CTRL_DESC))
+                        AddUniqueValue info("blocos"), bloco
+                        AddUniqueValue info("painels"), painel
+                        AddUniqueValue info("esps"), NzText(arrCtrl(i, CTRL_ESP))
+
+                        If info("tempo") = "" And NzText(arrCtrl(i, CTRL_TEMPO)) <> "" Then
+                            info("tempo") = arrCtrl(i, CTRL_TEMPO)
+                        End If
+
+                        If NzText(info("esp")) = "" And NzText(arrCtrl(i, CTRL_ESP)) <> "" Then
+                            info("esp") = NzText(arrCtrl(i, CTRL_ESP))
+                        End If
+
+                        info("countRows") = CLng(info("countRows")) + 1
+                    End If
+
+                End If
+            End If
+        End If
+    Next i
+
+    Set BuildAvailableNestings = dict
+End Function
+
+Public Sub Carregar_Lista_Emissao()
+    Dim wsE As Worksheet
+    Dim idBalsa As String, filtroBloco As String, filtroPainel As String
+    Dim dict As Object, k As Variant, info As Object
+    Dim arrOut() As Variant, linha As Long
+    Dim oldCalc As XlCalculation, oldScreen As Boolean, oldEvents As Boolean, oldStatusBar As Variant
+
+    oldCalc = Application.Calculation
+    oldScreen = Application.ScreenUpdating
+    oldEvents = Application.EnableEvents
+    oldStatusBar = Application.StatusBar
+    On Error GoTo TrataErro
+
+    Set wsE = GetWs("EMISSAO")
+    If wsE Is Nothing Then
+        MsgBox "Nao encontrei a aba EMISSAO.", vbCritical
+        Exit Sub
+    End If
+    
+    ClearWorksheetFilters_UI wsE
+
+    Application.Calculation = xlCalculationAutomatic
+    wsE.Calculate
+    DoEvents
+
+    idBalsa = NzText(wsE.Range("B4").Value)
+    filtroBloco = NzText(wsE.Range("E6").Value)
+    filtroPainel = NzText(wsE.Range("E7").Value)
+
+    BeginFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    ClearEmissionArea
+
+    If idBalsa = "" Then
+        EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+        MsgBox "Selecione primeiro o ID_BALSA na aba EMISSAO.", vbExclamation
+        Exit Sub
+    End If
+
+    Set dict = BuildAvailableNestings(idBalsa, filtroBloco, filtroPainel)
+    If dict Is Nothing Or dict.Count = 0 Then
+        EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+        MsgBox "Nenhum nesting disponivel para esta balsa com os filtros informados.", vbExclamation
+        Exit Sub
+    End If
+
+    ReDim arrOut(1 To dict.Count, 1 To 7)
+    linha = 0
+
+    For Each k In dict.Keys
+        linha = linha + 1
+        Set info = dict(k)
+
+        arrOut(linha, 1) = ""
+        arrOut(linha, 2) = CStr(k)
+        arrOut(linha, 3) = JoinDictKeys(info("pecas"), ", ")
+        arrOut(linha, 4) = JoinDictKeys(info("esps"), ", ")
+        arrOut(linha, 5) = info("tempo")
+        arrOut(linha, 6) = JoinDictKeys(info("blocos"), ", ")
+        arrOut(linha, 7) = JoinDictKeys(info("painels"), ", ")
+    Next k
+
+    wsE.Range("A" & FIRST_ROW_EMISSAO).Resize(dict.Count, 7).Value = arrOut
+    wsE.Range("E" & FIRST_ROW_EMISSAO & ":E" & (FIRST_ROW_EMISSAO + dict.Count - 1)).NumberFormat = "[h]:mm"
+
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox dict.Count & " nesting(s) disponiveis carregados para emissao.", vbInformation
+    Exit Sub
+
+TrataErro:
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox "Erro ao carregar lista de emissao: " & Err.Description, vbCritical
+End Sub
+Private Sub ClearWorksheetFilters_UI(ByVal ws As Worksheet)
+    On Error Resume Next
+    If ws Is Nothing Then Exit Sub
+
+    If ws.FilterMode Then ws.ShowAllData
+
+    If ws.AutoFilterMode Then
+        If ws.FilterMode Then ws.ShowAllData
+    End If
+    On Error GoTo 0
+End Sub
+
+Private Function GetSelectedNestingsFromEmissao_UI(ByVal wsE As Worksheet) As Object
+    Dim dict As Object
+    Dim r As Long
+    Dim lastEmissionRow As Long
+    Dim nesting As String
+
+    Set dict = CreateObject("Scripting.Dictionary")
+
+    If wsE Is Nothing Then
+        Set GetSelectedNestingsFromEmissao_UI = dict
+        Exit Function
+    End If
+
+    lastEmissionRow = LastUsedRow(wsE, "B", FIRST_ROW_EMISSAO)
+
+    For r = FIRST_ROW_EMISSAO To lastEmissionRow
+        If IsSelectedMark(wsE.Cells(r, 1).Value) Then
+            nesting = NzText(wsE.Cells(r, 2).Value)
+            If nesting <> "" Then
+                If Not dict.Exists(nesting) Then dict.Add nesting, 1
+            End If
+        End If
+    Next r
+
+    Set GetSelectedNestingsFromEmissao_UI = dict
+End Function
+
+Public Sub Emitir_Selecionados_e_Gerar_PDF()
+    Dim wsE As Worksheet, wsF As Worksheet
+    Dim loCtrl As ListObject, loEm As ListObject
+    Dim idBalsa As String, tipo As String, nomeBalsa As String
+    Dim maquina As String, turno As String, filtroBloco As String, filtroPainel As String
+    Dim idEmissao As String, dtEmissao As Variant
+    Dim selectedNestings As Object, dictDisp As Object, k As Variant, itemInfo As Object
+    Dim qtd As Long
+    Dim totalTempo As Double, savePath As Variant
+    Dim blocosText As String, painelsText As String, pecasText As String, descText As String
+    Dim arrCtrl As Variant, arrFicha() As Variant, arrLog() As Variant
+    Dim i As Long, linhaFicha As Long, linhaLog As Long, emCols As Long
+    Dim oldCalc As XlCalculation, oldScreen As Boolean, oldEvents As Boolean, oldStatusBar As Variant
+
+    oldCalc = Application.Calculation
+    oldScreen = Application.ScreenUpdating
+    oldEvents = Application.EnableEvents
+    oldStatusBar = Application.StatusBar
+    On Error GoTo TrataErro
+
+    Set wsE = GetWs("EMISSAO")
+    Set wsF = GetWs("FICHA_OPERADOR")
+    Set loCtrl = GetTable("CONTROLE_NESTINGS", "tblControle")
+    Set loEm = GetTable("EMISSOES", "tblEmissoes")
+
+    If wsE Is Nothing Or wsF Is Nothing Or loCtrl Is Nothing Or loEm Is Nothing Then
+        MsgBox "Faltam abas/tabelas obrigatorias para a emissao.", vbCritical
+        Exit Sub
+    End If
+
+    idBalsa = NzText(wsE.Range("B4").Value)
+    tipo = NzText(wsE.Range("B5").Value)
+    nomeBalsa = NzText(wsE.Range("B6").Value)
+
+    Application.Calculation = xlCalculationAutomatic
+    wsE.Calculate
+    DoEvents
+
+    dtEmissao = wsE.Range("B7").Value
+    maquina = NzText(wsE.Range("E4").Value)
+    turno = NzText(wsE.Range("E5").Value)
+    filtroBloco = NzText(wsE.Range("E6").Value)
+    filtroPainel = NzText(wsE.Range("E7").Value)
+    idEmissao = NzText(wsE.Range("E8").Value)
+
+    If idBalsa = "" Or maquina = "" Or turno = "" Then
+        MsgBox "Preencha ID_BALSA, MAQUINA e TURNO.", vbExclamation
+        Exit Sub
+    End If
+
+    If idEmissao = "" Then
+        MsgBox "Nao foi possivel gerar o ID_EMISSAO.", vbExclamation
+        Exit Sub
+    End If
+
+    ' Garante que todos os nestings marcados sejam lidos, mesmo com filtro ativo
+    ClearWorksheetFilters_UI wsE
+    DoEvents
+
+    Set selectedNestings = GetSelectedNestingsFromEmissao_UI(wsE)
+
+    If selectedNestings.Count = 0 Then
+        MsgBox "Marque com X os nestings que deseja emitir.", vbExclamation
+        Exit Sub
+    End If
+
+    Set dictDisp = BuildAvailableNestings(idBalsa, "", "")
+    If dictDisp Is Nothing Then
+        MsgBox "Nao encontrei nestings disponiveis para essa balsa.", vbExclamation
+        Exit Sub
+    End If
+
+    linhaFicha = 0
+    For Each k In selectedNestings.Keys
+        If dictDisp.Exists(CStr(k)) Then linhaFicha = linhaFicha + 1
+    Next k
+
+    If linhaFicha = 0 Then
+        MsgBox "Os nestings marcados nao estao mais disponiveis para emissao.", vbExclamation
+        Exit Sub
+    End If
+
+    If Not ConfirmarSelecaoEmissao_UI(idEmissao, idBalsa, tipo, nomeBalsa, maquina, turno, dtEmissao, selectedNestings, dictDisp) Then
+        MsgBox "Emissao cancelada pelo usuario.", vbInformation
+        Exit Sub
+    End If
+
+    BeginFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+
+    ClearFichaArea
+    wsF.Range("B4").Value = idEmissao
+    wsF.Range("B5").Value = idBalsa
+    wsF.Range("B6").Value = tipo
+    wsF.Range("B7").Value = nomeBalsa
+    wsF.Range("F4").Value = maquina
+    wsF.Range("F5").Value = turno
+
+    If filtroBloco <> "" Or filtroPainel <> "" Then
+        wsF.Range("F6").Value = "Bloco: " & filtroBloco & " | Painel: " & filtroPainel
+    Else
+        wsF.Range("F6").Value = "Todos os nestings nao processados"
+    End If
+
+    wsF.Range("F7").Value = dtEmissao
+    wsF.Range("F8").ClearContents
+
+    ReDim arrFicha(1 To linhaFicha, 1 To 10)
+    wsF.Range("A" & FIRST_ROW_FICHA).Resize(linhaFicha, 10).Value = arrFicha
+    emCols = loEm.Range.Columns.Count
+    ReDim arrLog(1 To linhaFicha, 1 To emCols)
+
+    linhaFicha = 0
+    linhaLog = 0
+    totalTempo = 0
+
+    For Each k In selectedNestings.Keys
+        If dictDisp.Exists(CStr(k)) Then
+            Set itemInfo = dictDisp(CStr(k))
+
+            pecasText = JoinDictKeys(itemInfo("pecas"), ", ")
+            descText = JoinDictKeys(itemInfo("descs"), " | ")
+            blocosText = JoinDictKeys(itemInfo("blocos"), ", ")
+            painelsText = JoinDictKeys(itemInfo("painels"), ", ")
+
+       linhaFicha = linhaFicha + 1
+arrFicha(linhaFicha, 1) = linhaFicha
+arrFicha(linhaFicha, 2) = CStr(k)
+arrFicha(linhaFicha, 3) = itemInfo("tempo")
+arrFicha(linhaFicha, 4) = JoinDictKeys(itemInfo("esps"), ", ")
+arrFicha(linhaFicha, 5) = blocosText
+arrFicha(linhaFicha, 6) = painelsText
+arrFicha(linhaFicha, 7) = ""
+arrFicha(linhaFicha, 8) = ""
+arrFicha(linhaFicha, 9) = ""
+
+            linhaLog = linhaLog + 1
+            arrLog(linhaLog, EM_ID_EMISSAO) = idEmissao
+            arrLog(linhaLog, EM_DT) = dtEmissao
+            arrLog(linhaLog, EM_ID_BALSA) = idBalsa
+            arrLog(linhaLog, EM_TIPO) = tipo
+            arrLog(linhaLog, EM_NOME) = nomeBalsa
+            arrLog(linhaLog, EM_MAQUINA) = maquina
+            arrLog(linhaLog, EM_TURNO) = turno
+            arrLog(linhaLog, EM_BLOCO) = blocosText
+            arrLog(linhaLog, EM_PAINEL) = painelsText
+            arrLog(linhaLog, EM_NESTING) = CStr(k)
+            arrLog(linhaLog, EM_PECAS) = pecasText
+            arrLog(linhaLog, EM_QTD_PECAS) = itemInfo("countRows")
+            arrLog(linhaLog, EM_DESC) = descText
+            arrLog(linhaLog, EM_ESP) = JoinDictKeys(itemInfo("esps"), ", ")
+            arrLog(linhaLog, EM_STATUS) = "Em processamento"
+            arrLog(linhaLog, EM_OBS) = ""
+            arrLog(linhaLog, EM_CHAVE) = idEmissao & "|" & CStr(k)
+
+            If IsNumeric(itemInfo("tempo")) Then
+                totalTempo = totalTempo + CDbl(itemInfo("tempo"))
+            End If
+        End If
+    Next k
+
+    wsF.Range("A" & FIRST_ROW_FICHA).Resize(linhaFicha, 7).Value = arrFicha
+wsF.Range("C" & FIRST_ROW_FICHA & ":C" & (FIRST_ROW_FICHA + linhaFicha - 1)).NumberFormat = "[h]:mm"
+wsF.Range("D" & FIRST_ROW_FICHA & ":D" & (FIRST_ROW_FICHA + linhaFicha - 1)).NumberFormat = "0.##"
+    wsF.Range("F8").Value = totalTempo
+    wsF.Range("F8").NumberFormat = "[h]:mm"
+
+    If Not loCtrl.DataBodyRange Is Nothing Then
+        arrCtrl = loCtrl.DataBodyRange.Value2
+
+        For i = 1 To UBound(arrCtrl, 1)
+            If NzText(arrCtrl(i, CTRL_ID_BALSA)) = idBalsa Then
+                If selectedNestings.Exists(NzText(arrCtrl(i, CTRL_NESTING))) Then
+                    If UCase$(NzText(arrCtrl(i, CTRL_STATUS))) = "DISPONIVEL" Then
+                        arrCtrl(i, CTRL_STATUS) = "Em processamento"
+                        arrCtrl(i, CTRL_ID_EMISSAO) = idEmissao
+                        arrCtrl(i, CTRL_DT_EMISSAO) = dtEmissao
+                        arrCtrl(i, CTRL_MAQUINA) = maquina
+                        arrCtrl(i, CTRL_TURNO) = turno
+                    End If
+                End If
+            End If
+        Next i
+
+        loCtrl.DataBodyRange.Value2 = arrCtrl
+    End If
+
+    Call AppendRowsToTable(loEm, arrLog, 1)
+
+    ConfigurarImpressaoFicha wsF, FIRST_ROW_FICHA + linhaFicha - 1
+
+    savePath = Application.GetSaveAsFilename( _
+        InitialFileName:=idEmissao & ".pdf", _
+        FileFilter:="PDF Files (*.pdf), *.pdf", _
+        Title:="Salvar ficha da emissao em PDF")
+
+    If savePath <> False Then
+        wsF.ExportAsFixedFormat Type:=xlTypePDF, Filename:=CStr(savePath), Quality:=xlQualityStandard
+    End If
+
+    ClearEmissionArea
+    Carregar_Lista_Emissao
+
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+
+    qtd = selectedNestings.Count
+
+    MsgBox "Emissao realizada com sucesso." & vbCrLf & vbCrLf & _
+           "ID_EMISSAO: " & idEmissao & vbCrLf & _
+           "Nestings emitidos: " & qtd, vbInformation
+    Exit Sub
+
+TrataErro:
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox "Erro ao emitir selecionados e gerar PDF: " & Err.Description, vbCritical
+End Sub
+
+ Public Sub Carregar_Retorno_Emissao()
+    Dim wsR As Worksheet
+    Dim loEm As ListObject, loRet As ListObject
+    Dim idEmissao As String, nesting As String
+    Dim i As Long, linha As Long
+    Dim arrEm As Variant, arrRet As Variant, arrOut() As Variant
+    Dim dictFinalizados As Object, key As String
+    Dim oldCalc As XlCalculation, oldScreen As Boolean, oldEvents As Boolean, oldStatusBar As Variant
+
+    oldCalc = Application.Calculation
+    oldScreen = Application.ScreenUpdating
+    oldEvents = Application.EnableEvents
+    oldStatusBar = Application.StatusBar
+    On Error GoTo TrataErro
+
+    Set wsR = GetWs("RETORNO_BAIXA")
+    Set loEm = GetTable("EMISSOES", "tblEmissoes")
+    Set loRet = GetTable("LOG_RETORNO", "tblRetorno")
+
+    If wsR Is Nothing Or loEm Is Nothing Or loRet Is Nothing Then
+        MsgBox "Faltam abas/tabelas obrigatorias para retorno.", vbCritical
+        Exit Sub
+    End If
+
+    Atualizar_Lista_Retorno_Pendente
+    idEmissao = NzText(wsR.Range("B4").Value)
+
+    BeginFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    ClearRetornoArea
+
+    If idEmissao = "" Then
+        EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+        MsgBox "Selecione primeiro o ID_EMISSAO.", vbExclamation
+        Exit Sub
+    End If
+
+    Set dictFinalizados = CreateObject("Scripting.Dictionary")
+
+    If Not loRet.DataBodyRange Is Nothing Then
+        arrRet = loRet.DataBodyRange.Value2
+        For i = 1 To UBound(arrRet, 1)
+            If NzText(arrRet(i, RET_ID_EMISSAO)) = idEmissao And NzText(arrRet(i, RET_STATUS)) = "Finalizado" Then
+                key = idEmissao & "|" & NzText(arrRet(i, RET_NESTING))
+                dictFinalizados(key) = 1
+            End If
+        Next i
+    End If
+
+    If loEm.DataBodyRange Is Nothing Then
+        EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+        MsgBox "Nao encontrei dados em EMISSOES.", vbExclamation
+        Exit Sub
+    End If
+
+    arrEm = loEm.DataBodyRange.Value2
+    linha = 0
+
+    For i = 1 To UBound(arrEm, 1)
+        If NzText(arrEm(i, EM_ID_EMISSAO)) = idEmissao Then
+            nesting = NzText(arrEm(i, EM_NESTING))
+            key = idEmissao & "|" & nesting
+            If Not dictFinalizados.Exists(key) Then
+                linha = linha + 1
+            End If
+        End If
+    Next i
+
+    If linha = 0 Then
+        EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+        MsgBox "Nao encontrei nestings pendentes para este ID_EMISSAO.", vbExclamation
+        Exit Sub
+    End If
+
+    ReDim arrOut(1 To linha, 1 To 4)
+    linha = 0
+
+    For i = 1 To UBound(arrEm, 1)
+        If NzText(arrEm(i, EM_ID_EMISSAO)) = idEmissao Then
+            nesting = NzText(arrEm(i, EM_NESTING))
+            key = idEmissao & "|" & nesting
+            If Not dictFinalizados.Exists(key) Then
+                linha = linha + 1
+                arrOut(linha, 1) = linha
+                arrOut(linha, 2) = nesting
+                arrOut(linha, 3) = arrEm(i, EM_PECAS)
+                arrOut(linha, 4) = ""
+            End If
+        End If
+    Next i
+
+    wsR.Range("A" & FIRST_ROW_RETORNO).Resize(UBound(arrOut, 1), 4).Value = arrOut
+    wsR.Range("E" & FIRST_ROW_RETORNO & ":F" & (FIRST_ROW_RETORNO + UBound(arrOut, 1) - 1)).NumberFormat = "hh:mm"
+
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox "Retorno carregado. Selecione o operador, preencha a carreira chapa, os horarios e clique em Finalizar_Retorno.", vbInformation
+    Exit Sub
+
+TrataErro:
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox "Erro ao carregar retorno da emissao: " & Err.Description, vbCritical
+End Sub
+
+Public Sub Finalizar_Retorno()
+    Const STATUS_FINAL As String = "Finalizado"
+
+    Dim oldCalc As XlCalculation
+    Dim oldScreen As Boolean
+    Dim oldEvents As Boolean
+    Dim oldStatusBar As Variant
+
+    Dim wsR As Worksheet
+    Dim loCtrl As ListObject
+    Dim loEm As ListObject
+    Dim loLog As ListObject
+
+    Dim arrCtrl As Variant
+    Dim arrEm As Variant
+
+    Dim dictUI As Object
+    Dim dictEm As Object
+    Dim dictCtrlNestFound As Object
+
+    Dim uiInfo As Variant
+    Dim emInfo As Variant
+
+    Dim idEmissao As String
+    Dim idBalsa As String
+    Dim tipoBalsa As String
+    Dim nomeBalsa As String
+    Dim maquina As String
+    Dim turno As String
+    Dim dataBaixa As Variant
+
+    Dim lastRow As Long
+    Dim r As Long
+    Dim i As Long
+    Dim nesting As String
+    Dim faltantes As String
+    Dim k As Variant
+
+    Dim qtdeLinhasUI As Long
+    Dim qtdeCtrlAtualizada As Long
+    Dim qtdeEmAtualizada As Long
+
+    ' tblControle
+    Dim cCtrlIdBalsa As Long, cCtrlNesting As Long, cCtrlStatus As Long
+    Dim cCtrlIdEmissao As Long, cCtrlDataFim As Long, cCtrlHoraIni As Long
+    Dim cCtrlHoraFim As Long, cCtrlParada As Long, cCtrlMotivo As Long
+    Dim cCtrlObs As Long, cCtrlOperador As Long, cCtrlCarreira As Long
+
+    ' tblEmissoes
+    Dim cEmIdEmissao As Long, cEmNesting As Long, cEmStatus As Long
+    Dim cEmBloco As Long, cEmPainel As Long, cEmPecas As Long
+
+    ' tblRetorno (LOG)
+    Dim cLogIdEmissao As Long, cLogDataBaixa As Long, cLogIdBalsa As Long
+    Dim cLogTipo As Long, cLogNome As Long, cLogMaquina As Long
+    Dim cLogTurno As Long, cLogBloco As Long, cLogPainel As Long
+    Dim cLogNesting As Long, cLogPecas As Long, cLogHoraIni As Long
+    Dim cLogHoraFim As Long, cLogParada As Long, cLogMotivo As Long
+    Dim cLogObs As Long, cLogStatus As Long, cLogOperador As Long
+    Dim cLogCarreira As Long
+
+    On Error GoTo TrataErro
+
+    oldCalc = Application.Calculation
+    oldScreen = Application.ScreenUpdating
+    oldEvents = Application.EnableEvents
+    oldStatusBar = Application.StatusBar
+
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+    Application.StatusBar = "Finalizando retorno..."
+
+    Set wsR = ThisWorkbook.Worksheets("RETORNO_BAIXA")
+    Set loCtrl = ThisWorkbook.Worksheets("CONTROLE_NESTINGS").ListObjects("tblControle")
+    Set loEm = ThisWorkbook.Worksheets("EMISSOES").ListObjects("tblEmissoes")
+    Set loLog = ThisWorkbook.Worksheets("LOG_RETORNO").ListObjects("tblRetorno")
+
+    Application.Calculate
+
+    ' Cabeçalho da tela RETORNO_BAIXA
+    idEmissao = NzTextSafe(wsR.Range("B4").Value)
+    idBalsa = NzTextSafe(wsR.Range("B5").Value)
+    tipoBalsa = NzTextSafe(wsR.Range("B6").Value)
+    nomeBalsa = NzTextSafe(wsR.Range("B7").Value)
+    maquina = NzTextSafe(wsR.Range("E4").Value)
+    turno = NzTextSafe(wsR.Range("E5").Value)
+    dataBaixa = wsR.Range("E6").Value
+
+    If idEmissao = "" Then
+        MsgBox "Selecione um ID_EMISSAO em B4 antes de finalizar.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    If idBalsa = "" Then
+        MsgBox "O ID_BALSA está vazio. Verifique se o ID_EMISSAO selecionado é válido.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    If maquina = "" Or turno = "" Then
+        MsgBox "Máquina ou turno não preenchidos.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    If Not IsDate(dataBaixa) Then
+        MsgBox "A DATA_BAIXA em E6 está inválida.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    ' Mapeia colunas de tblControle
+    cCtrlIdBalsa = loCtrl.ListColumns("ID_BALSA").Index
+    cCtrlNesting = loCtrl.ListColumns("NESTING").Index
+    cCtrlStatus = loCtrl.ListColumns("STATUS_PROCESSO").Index
+    cCtrlIdEmissao = loCtrl.ListColumns("ID_EMISSAO").Index
+    cCtrlDataFim = loCtrl.ListColumns("DATA_FINALIZACAO").Index
+    cCtrlHoraIni = loCtrl.ListColumns("HORA_INICIO").Index
+    cCtrlHoraFim = loCtrl.ListColumns("HORA_FIM").Index
+    cCtrlParada = loCtrl.ListColumns("HOUVE_PARADA").Index
+    cCtrlMotivo = loCtrl.ListColumns("MOTIVO_PARADA").Index
+    cCtrlObs = loCtrl.ListColumns("OBSERVACAO").Index
+    cCtrlOperador = loCtrl.ListColumns("OPERADOR").Index
+    cCtrlCarreira = loCtrl.ListColumns("CARREIRA_CHAPA").Index
+
+    ' Mapeia colunas de tblEmissoes
+    cEmIdEmissao = loEm.ListColumns("ID_EMISSAO").Index
+    cEmNesting = loEm.ListColumns("NESTING").Index
+    cEmStatus = loEm.ListColumns("STATUS_PROCESSO").Index
+    cEmBloco = loEm.ListColumns("BLOCO").Index
+    cEmPainel = loEm.ListColumns("PAINEL").Index
+    cEmPecas = loEm.ListColumns("PECAS_AGRUPADAS").Index
+
+    ' Mapeia colunas de tblRetorno (LOG)
+    cLogIdEmissao = loLog.ListColumns("ID_EMISSAO").Index
+    cLogDataBaixa = loLog.ListColumns("DATA_BAIXA").Index
+    cLogIdBalsa = loLog.ListColumns("ID_BALSA").Index
+    cLogTipo = loLog.ListColumns("TIPO_BALSA").Index
+    cLogNome = loLog.ListColumns("NOME_BALSA").Index
+    cLogMaquina = loLog.ListColumns("MAQUINA").Index
+    cLogTurno = loLog.ListColumns("TURNO").Index
+    cLogBloco = loLog.ListColumns("BLOCO").Index
+    cLogPainel = loLog.ListColumns("PAINEL").Index
+    cLogNesting = loLog.ListColumns("NESTING").Index
+    cLogPecas = loLog.ListColumns("PECAS_AGRUPADAS").Index
+    cLogHoraIni = loLog.ListColumns("HORA_INICIO").Index
+    cLogHoraFim = loLog.ListColumns("HORA_FIM").Index
+    cLogParada = loLog.ListColumns("HOUVE_PARADA").Index
+    cLogMotivo = loLog.ListColumns("MOTIVO_PARADA").Index
+    cLogObs = loLog.ListColumns("OBS").Index
+    cLogStatus = loLog.ListColumns("STATUS_FINAL").Index
+    cLogOperador = loLog.ListColumns("OPERADOR").Index
+    cLogCarreira = loLog.ListColumns("CARREIRA_CHAPA").Index
+
+    Set dictUI = CreateObject("Scripting.Dictionary")
+    dictUI.CompareMode = 1
+
+    Set dictEm = CreateObject("Scripting.Dictionary")
+    dictEm.CompareMode = 1
+
+    Set dictCtrlNestFound = CreateObject("Scripting.Dictionary")
+    dictCtrlNestFound.CompareMode = 1
+
+    ' Lê a área da tela RETORNO_BAIXA (linhas 12 para baixo)
+    lastRow = wsR.Cells(wsR.Rows.Count, "B").End(xlUp).Row
+    If lastRow < 12 Then
+        MsgBox "Não há nestings carregados para finalizar.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    For r = 12 To lastRow
+        nesting = NzTextSafe(wsR.Cells(r, "B").Value)
+
+        If nesting <> "" Then
+            qtdeLinhasUI = qtdeLinhasUI + 1
+
+            If NzTextSafe(wsR.Cells(r, "E").Value) = "" Then
+                MsgBox "HORA INI vazia na linha " & r & ".", vbExclamation
+                GoTo SaidaLimpa
+            End If
+
+            If NzTextSafe(wsR.Cells(r, "F").Value) = "" Then
+                MsgBox "HORA FIM vazia na linha " & r & ".", vbExclamation
+                GoTo SaidaLimpa
+            End If
+
+            dictUI(nesting) = Array( _
+                wsR.Cells(r, "C").Value, _
+                wsR.Cells(r, "D").Value, _
+                wsR.Cells(r, "E").Value, _
+                wsR.Cells(r, "F").Value, _
+                wsR.Cells(r, "G").Value, _
+                wsR.Cells(r, "H").Value, _
+                wsR.Cells(r, "I").Value, _
+                wsR.Cells(r, "J").Value)
+
+            dictCtrlNestFound(nesting) = False
+        End If
+    Next r
+
+    If qtdeLinhasUI = 0 Then
+        MsgBox "Não há linhas válidas na tela de retorno.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    ' Carrega emissões para buscar BLOCO, PAINEL e PECAS_AGRUPADAS
+    If loEm.DataBodyRange Is Nothing Then
+        MsgBox "A tabela EMISSOES está vazia.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    arrEm = loEm.DataBodyRange.Value2
+
+    For i = 1 To UBound(arrEm, 1)
+        If NzTextSafe(arrEm(i, cEmIdEmissao)) = idEmissao Then
+            nesting = NzTextSafe(arrEm(i, cEmNesting))
+            If nesting <> "" Then
+                dictEm(nesting) = Array( _
+                    arrEm(i, cEmBloco), _
+                    arrEm(i, cEmPainel), _
+                    arrEm(i, cEmPecas))
+            End If
+        End If
+    Next i
+
+    faltantes = ""
+    For Each k In dictUI.Keys
+        If Not dictEm.Exists(CStr(k)) Then
+            If faltantes <> "" Then faltantes = faltantes & ", "
+            faltantes = faltantes & CStr(k)
+        End If
+    Next k
+
+    If faltantes <> "" Then
+        MsgBox "Os seguintes nestings não foram encontrados na tabela EMISSOES:" & vbCrLf & faltantes, vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    ' Atualiza CONTROLE_NESTINGS
+    If loCtrl.DataBodyRange Is Nothing Then
+        MsgBox "A tabela CONTROLE_NESTINGS está vazia.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    arrCtrl = loCtrl.DataBodyRange.Value2
+
+    For i = 1 To UBound(arrCtrl, 1)
+        nesting = NzTextSafe(arrCtrl(i, cCtrlNesting))
+
+        If NzTextSafe(arrCtrl(i, cCtrlIdEmissao)) = idEmissao _
+           And NzTextSafe(arrCtrl(i, cCtrlIdBalsa)) = idBalsa _
+           And dictUI.Exists(nesting) Then
+
+            uiInfo = dictUI(nesting)
+
+            arrCtrl(i, cCtrlStatus) = STATUS_FINAL
+            arrCtrl(i, cCtrlDataFim) = dataBaixa
+            arrCtrl(i, cCtrlHoraIni) = uiInfo(2)
+            arrCtrl(i, cCtrlHoraFim) = uiInfo(3)
+            arrCtrl(i, cCtrlParada) = uiInfo(4)
+            arrCtrl(i, cCtrlMotivo) = uiInfo(5)
+            arrCtrl(i, cCtrlObs) = uiInfo(6)
+            arrCtrl(i, cCtrlOperador) = uiInfo(1)
+            arrCtrl(i, cCtrlCarreira) = uiInfo(7)
+
+            dictCtrlNestFound(nesting) = True
+            qtdeCtrlAtualizada = qtdeCtrlAtualizada + 1
+        End If
+    Next i
+
+    If qtdeCtrlAtualizada = 0 Then
+        MsgBox "Nenhuma linha do CONTROLE_NESTINGS foi localizada para esta finalização.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    faltantes = ""
+    For Each k In dictCtrlNestFound.Keys
+        If Not CBool(dictCtrlNestFound(k)) Then
+            If faltantes <> "" Then faltantes = faltantes & ", "
+            faltantes = faltantes & CStr(k)
+        End If
+    Next k
+
+    If faltantes <> "" Then
+        MsgBox "A rotina foi cancelada porque estes nestings não foram encontrados no CONTROLE_NESTINGS:" & vbCrLf & _
+               faltantes & vbCrLf & vbCrLf & _
+               "Nada foi gravado no LOG.", vbExclamation
+        GoTo SaidaLimpa
+    End If
+
+    loCtrl.DataBodyRange.Value2 = arrCtrl
+
+    ' Atualiza EMISSOES
+    For i = 1 To UBound(arrEm, 1)
+        nesting = NzTextSafe(arrEm(i, cEmNesting))
+
+        If NzTextSafe(arrEm(i, cEmIdEmissao)) = idEmissao _
+           And dictUI.Exists(nesting) Then
+
+            arrEm(i, cEmStatus) = STATUS_FINAL
+            qtdeEmAtualizada = qtdeEmAtualizada + 1
+        End If
+    Next i
+
+    loEm.DataBodyRange.Value2 = arrEm
+
+    ' Grava LOG_RETORNO
+    For r = 12 To lastRow
+        nesting = NzTextSafe(wsR.Cells(r, "B").Value)
+
+        If nesting <> "" Then
+            uiInfo = dictUI(nesting)
+            emInfo = dictEm(nesting)
+
+            With loLog.ListRows.Add.Range
+                .Cells(1, cLogIdEmissao).Value = idEmissao
+                .Cells(1, cLogDataBaixa).Value = dataBaixa
+                .Cells(1, cLogIdBalsa).Value = idBalsa
+                .Cells(1, cLogTipo).Value = tipoBalsa
+                .Cells(1, cLogNome).Value = nomeBalsa
+                .Cells(1, cLogMaquina).Value = maquina
+                .Cells(1, cLogTurno).Value = turno
+                .Cells(1, cLogBloco).Value = emInfo(0)
+                .Cells(1, cLogPainel).Value = emInfo(1)
+                .Cells(1, cLogNesting).Value = nesting
+                .Cells(1, cLogPecas).Value = emInfo(2)
+                .Cells(1, cLogHoraIni).Value = uiInfo(2)
+                .Cells(1, cLogHoraFim).Value = uiInfo(3)
+                .Cells(1, cLogParada).Value = uiInfo(4)
+                .Cells(1, cLogMotivo).Value = uiInfo(5)
+                .Cells(1, cLogObs).Value = uiInfo(6)
+                .Cells(1, cLogStatus).Value = STATUS_FINAL
+                .Cells(1, cLogOperador).Value = uiInfo(1)
+                .Cells(1, cLogCarreira).Value = uiInfo(7)
+            End With
+        End If
+    Next r
+
+    ' Limpa a tela
+    wsR.Range("A12:J5000").ClearContents
+    wsR.Range("B4").ClearContents
+    wsR.Range("E6").Value = Date
+
+    MsgBox "Retorno finalizado com sucesso." & vbCrLf & vbCrLf & _
+           "Linhas atualizadas no CONTROLE_NESTINGS: " & qtdeCtrlAtualizada & vbCrLf & _
+           "Linhas atualizadas em EMISSOES: " & qtdeEmAtualizada, vbInformation
+
+SaidaLimpa:
+    Application.ScreenUpdating = oldScreen
+    Application.EnableEvents = oldEvents
+    Application.Calculation = oldCalc
+    Application.StatusBar = oldStatusBar
+    Exit Sub
+
+TrataErro:
+    Application.ScreenUpdating = oldScreen
+    Application.EnableEvents = oldEvents
+    Application.Calculation = oldCalc
+    Application.StatusBar = oldStatusBar
+    MsgBox "Erro ao finalizar retorno: " & Err.Description, vbCritical
+End Sub
+
+Private Function NzTextSafe(ByVal v As Variant) As String
+    If IsError(v) Then
+        NzTextSafe = ""
+    ElseIf IsNull(v) Or IsEmpty(v) Then
+        NzTextSafe = ""
+    Else
+        NzTextSafe = Trim$(CStr(v))
+    End If
+End Function
+
+
+
+Public Sub Zerar_Sistema_Para_Producao()
+    Dim wb As Workbook
+    Dim wsCad As Worksheet, wsEm As Worksheet, wsF As Worksheet, wsR As Worksheet, wsDash As Worksheet, wsPar As Worksheet
+    Dim loCad As ListObject, loCtrl As ListObject, loEm As ListObject, loRet As ListObject
+    Dim resp As VbMsgBoxResult
+    Dim oldCalc As XlCalculation
+    Dim oldScreen As Boolean
+    Dim oldEvents As Boolean
+    Dim oldStatusBar As Variant
+    
+    resp = MsgBox( _
+        "ATENCAO!" & vbCrLf & vbCrLf & _
+        "Esta macro vai apagar todos os dados de TESTE das areas operacionais:" & vbCrLf & _
+        "- CAD_BALSA / tblBalsas" & vbCrLf & _
+        "- CONTROLE_NESTINGS / tblControle" & vbCrLf & _
+        "- EMISSOES / tblEmissoes" & vbCrLf & _
+        "- LOG_RETORNO / tblRetorno" & vbCrLf & _
+        "- telas EMISSAO / FICHA_OPERADOR / RETORNO_BAIXA" & vbCrLf & vbCrLf & _
+        "A BASE_DADOS e a PARAMETROS serao mantidas." & vbCrLf & vbCrLf & _
+        "Deseja continuar?", _
+        vbYesNo + vbCritical + vbDefaultButton2, _
+        "Zerar sistema para producao")
+    
+    If resp <> vbYes Then Exit Sub
+    
+    On Error GoTo TrataErro
+    
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then
+        MsgBox "Nao encontrei o workbook ativo.", vbCritical
+        Exit Sub
+    End If
+    
+    Set wsCad = Reset_GetWs(wb, "CAD_BALSA")
+    Set wsEm = Reset_GetWs(wb, "EMISSAO")
+    Set wsF = Reset_GetWs(wb, "FICHA_OPERADOR")
+    Set wsR = Reset_GetWs(wb, "RETORNO_BAIXA")
+    Set wsDash = Reset_GetWs(wb, "DASHBOARD")
+    Set wsPar = Reset_GetWs(wb, "PARAMETROS")
+    
+    Set loCad = Reset_GetTable(wsCad, "tblBalsas")
+    Set loCtrl = Reset_GetTable(Reset_GetWs(wb, "CONTROLE_NESTINGS"), "tblControle")
+    Set loEm = Reset_GetTable(Reset_GetWs(wb, "EMISSOES"), "tblEmissoes")
+    Set loRet = Reset_GetTable(Reset_GetWs(wb, "LOG_RETORNO"), "tblRetorno")
+    
+    If wsCad Is Nothing Or wsEm Is Nothing Or wsF Is Nothing Or wsR Is Nothing Or wsPar Is Nothing Then
+        MsgBox "Faltam uma ou mais abas obrigatorias." & vbCrLf & _
+               "Verifique: CAD_BALSA, EMISSAO, FICHA_OPERADOR, RETORNO_BAIXA, PARAMETROS.", vbCritical
+        Exit Sub
+    End If
+    
+    If loCad Is Nothing Or loCtrl Is Nothing Or loEm Is Nothing Or loRet Is Nothing Then
+        MsgBox "Faltam uma ou mais tabelas obrigatorias." & vbCrLf & _
+               "Verifique: tblBalsas, tblControle, tblEmissoes, tblRetorno.", vbCritical
+        Exit Sub
+    End If
+    
+    Reset_BeginFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    
+    Application.StatusBar = "Limpando tblBalsas..."
+    ResetarTblBalsas loCad
+    
+    Application.StatusBar = "Limpando tblControle..."
+    ResetarTabelaMantendoUmaLinha loCtrl
+    
+    Application.StatusBar = "Limpando tblEmissoes..."
+    ResetarTabelaMantendoUmaLinha loEm
+    
+    Application.StatusBar = "Limpando tblRetorno..."
+    ResetarTabelaMantendoUmaLinha loRet
+    
+    Application.StatusBar = "Limpando telas..."
+    
+    ' EMISSAO
+    wsEm.Range("B4").ClearContents
+    wsEm.Range("E4:E6").ClearContents
+    wsEm.Range("A" & RESET_FIRST_ROW_EMISSAO & ":G" & RESET_MAX_UI_ROWS).ClearContents
+    
+    ' FICHA_OPERADOR
+    wsF.Range("B4:B7,F4:F8").ClearContents
+    wsF.Range("A" & RESET_FIRST_ROW_FICHA & ":I" & RESET_MAX_UI_ROWS).ClearContents
+    
+    ' RETORNO_BAIXA
+    wsR.Range("B4").ClearContents
+    wsR.Range("E4:E6").ClearContents
+    wsR.Range("A" & RESET_FIRST_ROW_RETORNO & ":I" & RESET_MAX_UI_ROWS).ClearContents
+    
+    ' Atualiza a lista de retorno pendente
+    Application.StatusBar = "Atualizando listas..."
+    Reset_AtualizarListaRetornoPendente wb, wsR, wsPar, loEm
+    
+    If Not wsCad Is Nothing Then wsCad.Calculate
+    If Not wsDash Is Nothing Then wsDash.Calculate
+    Application.Calculate
+    
+    Reset_EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    
+    MsgBox "Sistema zerado com sucesso." & vbCrLf & vbCrLf & _
+           "Mantido:" & vbCrLf & _
+           "- BASE_DADOS" & vbCrLf & _
+           "- PARAMETROS" & vbCrLf & vbCrLf & _
+           "Apagado:" & vbCrLf & _
+           "- CAD_BALSA / tblBalsas" & vbCrLf & _
+           "- CONTROLE_NESTINGS / tblControle" & vbCrLf & _
+           "- EMISSOES / tblEmissoes" & vbCrLf & _
+           "- LOG_RETORNO / tblRetorno" & vbCrLf & _
+           "- dados das telas operacionais", vbInformation
+    Exit Sub
+
+TrataErro:
+    Reset_EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox "Erro ao zerar sistema: " & Err.Description, vbCritical
+End Sub
+
+Private Function Reset_GetWs(ByVal wb As Workbook, ByVal sheetName As String) As Worksheet
+    On Error Resume Next
+    Set Reset_GetWs = wb.Worksheets(sheetName)
+    On Error GoTo 0
+End Function
+
+Private Function Reset_GetTable(ByVal ws As Worksheet, ByVal tableName As String) As ListObject
+    If ws Is Nothing Then Exit Function
+    On Error Resume Next
+    Set Reset_GetTable = ws.ListObjects(tableName)
+    On Error GoTo 0
+End Function
+
+Private Sub Reset_BeginFastMode(ByRef oldCalc As XlCalculation, ByRef oldScreen As Boolean, ByRef oldEvents As Boolean, ByRef oldStatusBar As Variant)
+    With Application
+        oldCalc = .Calculation
+        oldScreen = .ScreenUpdating
+        oldEvents = .EnableEvents
+        oldStatusBar = .StatusBar
+        
+        .ScreenUpdating = False
+        .EnableEvents = False
+        .DisplayStatusBar = True
+        .StatusBar = "Processando..."
+        .Calculation = xlCalculationManual
+    End With
+End Sub
+
+Private Sub Reset_EndFastMode(ByVal oldCalc As XlCalculation, ByVal oldScreen As Boolean, ByVal oldEvents As Boolean, ByVal oldStatusBar As Variant)
+    With Application
+        On Error Resume Next
+        If oldCalc <> 0 Then .Calculation = oldCalc
+        .EnableEvents = oldEvents
+        .ScreenUpdating = oldScreen
+        .StatusBar = oldStatusBar
+        On Error GoTo 0
+    End With
+End Sub
+
+Private Sub ResetarTabelaMantendoUmaLinha(ByVal lo As ListObject)
+    If lo Is Nothing Then Exit Sub
+    
+    On Error Resume Next
+    
+    If lo.ListRows.Count = 0 Then
+        lo.ListRows.Add
+    End If
+    
+    Do While lo.ListRows.Count > 1
+        lo.ListRows(lo.ListRows.Count).Delete
+    Loop
+    
+    If Not lo.DataBodyRange Is Nothing Then
+        lo.DataBodyRange.Rows(1).ClearContents
+    End If
+    
+    On Error GoTo 0
+End Sub
+
+Private Sub ResetarTblBalsas(ByVal lo As ListObject)
+    Dim ws As Worksheet
+    Dim r As Long
+    
+    If lo Is Nothing Then Exit Sub
+    Set ws = lo.Parent
+    
+    On Error Resume Next
+    
+    If lo.ListRows.Count = 0 Then
+        lo.ListRows.Add
+    End If
+    
+    Do While lo.ListRows.Count > 1
+        lo.ListRows(lo.ListRows.Count).Delete
+    Loop
+    
+    If Not lo.DataBodyRange Is Nothing Then
+        lo.DataBodyRange.Rows(1).ClearContents
+        r = lo.DataBodyRange.Row
+        Reset_FillCadBalsaFormulas ws, r
+    End If
+    
+    On Error GoTo 0
+End Sub
+
+Private Sub Reset_FillCadBalsaFormulas(ByVal ws As Worksheet, ByVal r As Long)
+    ws.Cells(r, 4).Formula = "=IF(C" & r & "<>"""",TODAY(),"""")"
+    ws.Cells(r, 5).Formula = "=IF(A" & r & "<>"""",SUMPRODUCT((tblControle[ID_BALSA]=A" & r & ")*(tblControle[NESTING]<>"""")/((tblControle[NESTING]="""")+(tblControle[ID_BALSA]<>A" & r & ")+COUNTIFS(tblControle[ID_BALSA],A" & r & ",tblControle[NESTING],tblControle[NESTING]&""""))),"""")"
+    ws.Cells(r, 6).Formula = "=IF(A" & r & "<>"""",SUMPRODUCT((tblControle[ID_BALSA]=A" & r & ")*(((tblControle[STATUS_PROCESSO]=""Em processamento"")+(tblControle[STATUS_PROCESSO]=""Finalizado""))>0)*(tblControle[NESTING]<>"""")/((tblControle[NESTING]="""")+(tblControle[ID_BALSA]<>A" & r & ")+COUNTIFS(tblControle[ID_BALSA],A" & r & ",tblControle[NESTING],tblControle[NESTING]&""""))),"""")"
+    ws.Cells(r, 7).Formula = "=IF(A" & r & "<>"""",SUMPRODUCT((tblControle[ID_BALSA]=A" & r & ")*(tblControle[STATUS_PROCESSO]=""Finalizado"")*(tblControle[NESTING]<>"""")/((tblControle[NESTING]="""")+(tblControle[ID_BALSA]<>A" & r & ")+COUNTIFS(tblControle[ID_BALSA],A" & r & ",tblControle[NESTING],tblControle[NESTING]&""""))),"""")"
+    ws.Cells(r, 8).Formula = "=IF(A" & r & "<>"""",IF(E" & r & "-G" & r & ">0,E" & r & "-G" & r & ",0),"""")"
+    ws.Cells(r, 9).Formula = "=IFERROR(G" & r & "/E" & r & ",0)"
+    ws.Cells(r, 10).Formula = "=IF(A" & r & "="""","""",IF(E" & r & "=0,""Sem base"",IF(G" & r & ">=E" & r & ",""Concluida"",IF(F" & r & ">0,""Em andamento"",""Nao iniciada""))))"
+    ws.Cells(r, 9).NumberFormat = "0.0%"
+End Sub
+
+Private Sub Reset_AtualizarListaRetornoPendente(ByVal wb As Workbook, ByVal wsR As Worksheet, ByVal wsPar As Worksheet, ByVal loEm As ListObject)
+    Dim arrEm As Variant
+    Dim dictPend As Object
+    Dim i As Long
+    Dim lastRow As Long
+    Dim idEmissao As String
+    Dim statusEm As String
+    Dim arrOut() As Variant
+    Dim k As Variant
+    Dim idx As Long
+    
+    If wb Is Nothing Or wsR Is Nothing Or wsPar Is Nothing Or loEm Is Nothing Then Exit Sub
+    
+    wsPar.Range("Q5:Q1000").ClearContents
+    Set dictPend = CreateObject("Scripting.Dictionary")
+    
+    If Not loEm.DataBodyRange Is Nothing Then
+        arrEm = loEm.DataBodyRange.Value2
+        For i = 1 To UBound(arrEm, 1)
+            idEmissao = Trim$(CStr(arrEm(i, RESET_EM_ID_EMISSAO)))
+            statusEm = Trim$(CStr(arrEm(i, RESET_EM_STATUS)))
+            
+            If idEmissao <> "" And UCase$(statusEm) <> "FINALIZADO" Then
+                If Not dictPend.Exists(idEmissao) Then
+                    dictPend.Add idEmissao, 1
+                End If
+            End If
+        Next i
+    End If
+    
+    If dictPend.Count > 0 Then
+        ReDim arrOut(1 To dictPend.Count, 1 To 1)
+        idx = 0
+        For Each k In dictPend.Keys
+            idx = idx + 1
+            arrOut(idx, 1) = CStr(k)
+        Next k
+        wsPar.Range("Q5").Resize(dictPend.Count, 1).Value = arrOut
+        lastRow = 4 + dictPend.Count
+    Else
+        wsPar.Range("Q5").Value = ""
+        lastRow = 5
+    End If
+    
+    On Error Resume Next
+    wb.Names("ListaRetornoPendente").Delete
+    On Error GoTo 0
+    
+    wb.Names.Add Name:="ListaRetornoPendente", RefersTo:="=" & wsPar.Name & "!$Q$5:$Q$" & lastRow
+    
+    With wsR.Range("B4").Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:="=ListaRetornoPendente"
+        .IgnoreBlank = True
+        .InCellDropdown = True
+        .InputTitle = "ID Emissao"
+        .ErrorTitle = "Valor invalido"
+        .InputMessage = "Selecione um ID_EMISSAO com nesting pendente de baixa."
+        .ErrorMessage = "Escolha um ID_EMISSAO disponivel na lista."
+        .ShowInput = True
+        .ShowError = True
+    End With
+    
+    wsR.Range("B4").ClearContents
+End Sub
+
+
+Option Explicit
+
+
+Private Sub ClearTableFilters_UI(ByVal lo As ListObject)
+    On Error Resume Next
+
+    If lo Is Nothing Then Exit Sub
+
+    If Not lo.AutoFilter Is Nothing Then
+        If lo.AutoFilter.FilterMode Then lo.AutoFilter.ShowAllData
+    End If
+
+    ClearWorksheetFilters_UI lo.Parent
+
+    On Error GoTo 0
+End Sub
+
+Private Function DeleteTableRowsByText_UI(ByVal lo As ListObject, ByVal colIndex As Long, ByVal criteria As String) As Long
+    Dim i As Long
+    Dim valorAtual As String
+
+    If lo Is Nothing Then Exit Function
+    If lo.DataBodyRange Is Nothing Then Exit Function
+    If colIndex < 1 Or colIndex > lo.ListColumns.Count Then Exit Function
+
+    ClearTableFilters_UI lo
+    criteria = UCase$(Trim$(criteria))
+
+    For i = lo.ListRows.Count To 1 Step -1
+        valorAtual = UCase$(NzText(lo.ListRows(i).Range.Cells(1, colIndex).Value2))
+        If valorAtual = criteria Then
+            lo.ListRows(i).Delete
+            DeleteTableRowsByText_UI = DeleteTableRowsByText_UI + 1
+        End If
+    Next i
+End Function
+
+Private Function EmissaoTemRetornoOuFinalizacao_UI(ByVal idEmissao As String) As Boolean
+    Dim loRet As ListObject, loEm As ListObject
+    Dim arr As Variant
+    Dim i As Long
+
+    idEmissao = UCase$(Trim$(idEmissao))
+    If idEmissao = "" Then Exit Function
+
+    Set loRet = GetTable("LOG_RETORNO", "tblRetorno")
+    If Not loRet Is Nothing Then
+        If Not loRet.DataBodyRange Is Nothing Then
+            arr = loRet.DataBodyRange.Value2
+            For i = 1 To UBound(arr, 1)
+                If UCase$(NzText(arr(i, RET_ID_EMISSAO))) = idEmissao Then
+                    EmissaoTemRetornoOuFinalizacao_UI = True
+                    Exit Function
+                End If
+            Next i
+        End If
+    End If
+
+    Set loEm = GetTable("EMISSOES", "tblEmissoes")
+    If Not loEm Is Nothing Then
+        If Not loEm.DataBodyRange Is Nothing Then
+            arr = loEm.DataBodyRange.Value2
+            For i = 1 To UBound(arr, 1)
+                If UCase$(NzText(arr(i, EM_ID_EMISSAO))) = idEmissao Then
+                    If UCase$(NzText(arr(i, EM_STATUS))) = "FINALIZADO" Then
+                        EmissaoTemRetornoOuFinalizacao_UI = True
+                        Exit Function
+                    End If
+                End If
+            Next i
+        End If
+    End If
+End Function
+
+Private Function EmissaoPodeSerCancelada_UI(ByVal idEmissao As String) As Boolean
+    Dim loCtrl As ListObject
+    Dim arr As Variant
+    Dim i As Long
+    Dim encontrouEmProcessamento As Boolean
+
+    idEmissao = UCase$(Trim$(idEmissao))
+    If idEmissao = "" Then Exit Function
+
+    If EmissaoTemRetornoOuFinalizacao_UI(idEmissao) Then Exit Function
+
+    Set loCtrl = GetTable("CONTROLE_NESTINGS", "tblControle")
+    If loCtrl Is Nothing Then Exit Function
+    If loCtrl.DataBodyRange Is Nothing Then Exit Function
+
+    arr = loCtrl.DataBodyRange.Value2
+
+    For i = 1 To UBound(arr, 1)
+        If UCase$(NzText(arr(i, CTRL_ID_EMISSAO))) = idEmissao Then
+            If UCase$(NzText(arr(i, CTRL_STATUS))) = "FINALIZADO" Then
+                EmissaoPodeSerCancelada_UI = False
+                Exit Function
+            End If
+
+            If UCase$(NzText(arr(i, CTRL_STATUS))) = "EM PROCESSAMENTO" Then
+                encontrouEmProcessamento = True
+            End If
+        End If
+    Next i
+
+    EmissaoPodeSerCancelada_UI = encontrouEmProcessamento
+End Function
+
+Public Function ListaEmissoesCancelaveis_UI() As Variant
+    Dim loEm As ListObject
+    Dim arrEm As Variant
+    Dim dict As Object, info As Object
+    Dim i As Long, idx As Long
+    Dim idEmissao As String, statusEm As String
+    Dim arrOut() As Variant
+    Dim k As Variant
+
+    Set loEm = GetTable("EMISSOES", "tblEmissoes")
+    If loEm Is Nothing Then Exit Function
+    If loEm.DataBodyRange Is Nothing Then Exit Function
+
+    arrEm = loEm.DataBodyRange.Value2
+    Set dict = CreateObject("Scripting.Dictionary")
+
+    For i = UBound(arrEm, 1) To 1 Step -1
+        idEmissao = UCase$(NzText(arrEm(i, EM_ID_EMISSAO)))
+        statusEm = UCase$(NzText(arrEm(i, EM_STATUS)))
+
+        If idEmissao <> "" And statusEm <> "FINALIZADO" Then
+            If EmissaoPodeSerCancelada_UI(idEmissao) Then
+                If Not dict.Exists(idEmissao) Then
+                    Set info = CreateObject("Scripting.Dictionary")
+                    info("data") = arrEm(i, EM_DT)
+                    info("id_balsa") = NzText(arrEm(i, EM_ID_BALSA))
+                    info("nome") = NzText(arrEm(i, EM_NOME))
+                    info("maquina") = NzText(arrEm(i, EM_MAQUINA))
+                    info("turno") = NzText(arrEm(i, EM_TURNO))
+                    info("qtd") = 1
+                    dict.Add idEmissao, info
+                Else
+                    Set info = dict(idEmissao)
+                    info("qtd") = CLng(info("qtd")) + 1
+                End If
+            End If
+        End If
+    Next i
+
+    If dict.Count = 0 Then Exit Function
+
+    ReDim arrOut(0 To dict.Count - 1, 0 To 6)
+    idx = -1
+
+    For Each k In dict.Keys
+        idx = idx + 1
+        Set info = dict(k)
+
+        arrOut(idx, 0) = CStr(k)
+
+        If IsDate(info("data")) Then
+            arrOut(idx, 1) = Format(CDate(info("data")), "dd/mm/yyyy")
+        Else
+            arrOut(idx, 1) = NzText(info("data"))
+        End If
+
+        arrOut(idx, 2) = NzText(info("id_balsa"))
+        arrOut(idx, 3) = NzText(info("nome"))
+        arrOut(idx, 4) = NzText(info("maquina"))
+        arrOut(idx, 5) = NzText(info("turno"))
+        arrOut(idx, 6) = CLng(info("qtd"))
+    Next k
+
+    ListaEmissoesCancelaveis_UI = arrOut
+End Function
+
+Public Sub CancelarEmissaoPorID_UI(ByVal idEmissao As String)
+    Dim wsE As Worksheet, wsF As Worksheet, wsR As Worksheet
+    Dim loCtrl As ListObject, loEm As ListObject
+    Dim arrCtrl As Variant
+    Dim i As Long
+    Dim qtdCtrl As Long, qtdEm As Long
+    Dim idBalsa As String
+    Dim recarregarEmissao As Boolean
+    Dim oldCalc As XlCalculation, oldScreen As Boolean, oldEvents As Boolean, oldStatusBar As Variant
+
+    oldCalc = Application.Calculation
+    oldScreen = Application.ScreenUpdating
+    oldEvents = Application.EnableEvents
+    oldStatusBar = Application.StatusBar
+    On Error GoTo TrataErro
+
+    idEmissao = UCase$(Trim$(idEmissao))
+    If idEmissao = "" Then
+        MsgBox "ID_EMISSAO invalido.", vbExclamation
+        Exit Sub
+    End If
+
+    Set wsE = GetWs("EMISSAO")
+    Set wsF = GetWs("FICHA_OPERADOR")
+    Set wsR = GetWs("RETORNO_BAIXA")
+    Set loCtrl = GetTable("CONTROLE_NESTINGS", "tblControle")
+    Set loEm = GetTable("EMISSOES", "tblEmissoes")
+
+    If wsE Is Nothing Or wsF Is Nothing Or wsR Is Nothing Or loCtrl Is Nothing Or loEm Is Nothing Then
+        MsgBox "Faltam abas/tabelas obrigatorias para cancelar a emissao.", vbCritical
+        Exit Sub
+    End If
+
+    ClearTableFilters_UI loCtrl
+    ClearTableFilters_UI loEm
+
+    If Not EmissaoPodeSerCancelada_UI(idEmissao) Then
+        MsgBox "Essa emissao nao pode ser cancelada." & vbCrLf & _
+               "Ela ja possui retorno/finalizacao ou nao esta mais em processamento.", vbExclamation
+        Exit Sub
+    End If
+
+    BeginFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+
+    If Not loCtrl.DataBodyRange Is Nothing Then
+        arrCtrl = loCtrl.DataBodyRange.Value2
+
+        If UBound(arrCtrl, 2) < CTRL_TURNO Then
+            EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+            MsgBox "A tabela tblControle nao possui todas as colunas necessarias para o cancelamento.", vbCritical
+            Exit Sub
+        End If
+
+        For i = 1 To UBound(arrCtrl, 1)
+            If UCase$(NzText(arrCtrl(i, CTRL_ID_EMISSAO))) = idEmissao Then
+                If UCase$(NzText(arrCtrl(i, CTRL_STATUS))) = "EM PROCESSAMENTO" Then
+                    If idBalsa = "" Then idBalsa = NzText(arrCtrl(i, CTRL_ID_BALSA))
+
+                    arrCtrl(i, CTRL_STATUS) = "Disponivel"
+                    arrCtrl(i, CTRL_ID_EMISSAO) = ""
+                    arrCtrl(i, CTRL_DT_EMISSAO) = ""
+                    arrCtrl(i, CTRL_MAQUINA) = ""
+                    arrCtrl(i, CTRL_TURNO) = ""
+
+                    qtdCtrl = qtdCtrl + 1
+                End If
+            End If
+        Next i
+
+        loCtrl.DataBodyRange.Value2 = arrCtrl
+    End If
+
+    qtdEm = DeleteTableRowsByText_UI(loEm, EM_ID_EMISSAO, idEmissao)
+
+    If UCase$(NzText(wsF.Range("B4").Value)) = idEmissao Then
+        ClearFichaArea
+    End If
+
+    If UCase$(NzText(wsR.Range("B4").Value)) = idEmissao Then
+        wsR.Range("B4").ClearContents
+        ClearRetornoArea
+    End If
+
+    If idBalsa <> "" Then
+        If UCase$(NzText(wsE.Range("B4").Value)) = UCase$(idBalsa) Then
+            recarregarEmissao = True
+            ClearEmissionArea
+        End If
+    End If
+
+    GetWs("CAD_BALSA").Calculate
+    GetWs("DASHBOARD").Calculate
+    Atualizar_Lista_Retorno_Pendente
+
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+
+    If recarregarEmissao Then
+        On Error Resume Next
+        Carregar_Lista_Emissao
+        On Error GoTo 0
+    End If
+
+    MsgBox "Emissao cancelada com sucesso." & vbCrLf & vbCrLf & _
+           "ID_EMISSAO: " & idEmissao & vbCrLf & _
+           "Linhas revertidas em CONTROLE_NESTINGS: " & qtdCtrl & vbCrLf & _
+           "Linhas removidas em EMISSOES: " & qtdEm, vbInformation
+    Exit Sub
+
+TrataErro:
+    EndFastMode oldCalc, oldScreen, oldEvents, oldStatusBar
+    MsgBox "Erro ao cancelar emissao: " & Err.Description, vbCritical
+End Sub
+
+
+
+
+Public Function ConfirmarSelecaoEmissao_UI(ByVal idEmissao As String, _
+                                           ByVal idBalsa As String, _
+                                           ByVal tipo As String, _
+                                           ByVal nomeBalsa As String, _
+                                           ByVal maquina As String, _
+                                           ByVal turno As String, _
+                                           ByVal dtEmissao As Variant, _
+                                           ByVal selectedNestings As Object, _
+                                           ByVal dictDisp As Object) As Boolean
+    Dim frm As frmConfirmarEmissao
+
+    Set frm = New frmConfirmarEmissao
+    frm.CarregarDados idEmissao, idBalsa, tipo, nomeBalsa, maquina, turno, dtEmissao, selectedNestings, dictDisp
+    frm.Show
+
+    ConfirmarSelecaoEmissao_UI = frm.Confirmado
+
+    Unload frm
+    Set frm = Nothing
+End Function
+
+
+
+
+
+
+
+
+
+
+
+========================================
+MODULO: frmCancelarEmissao
+========================================
+Option Explicit
+
+Private Sub lblCab_Click()
+
+End Sub
+
+Private Sub UserForm_Initialize()
+    CarregarListaEmissoesCancelaveis
+End Sub
+
+Private Sub cmdAtualizar_Click()
+    CarregarListaEmissoesCancelaveis
+End Sub
+
+Private Sub cmdCancelar_Click()
+    Dim idEmissao As String
+    Dim resp As VbMsgBoxResult
+
+    idEmissao = GetIdEmissaoSelecionado()
+
+    If idEmissao = "" Then
+        MsgBox "Selecione uma emissao na lista.", vbExclamation
+        Exit Sub
+    End If
+
+    resp = MsgBox( _
+        "Deseja realmente cancelar a emissao abaixo?" & vbCrLf & vbCrLf & _
+        "ID_EMISSAO: " & idEmissao, _
+        vbYesNo + vbQuestion + vbDefaultButton2, _
+        "Confirmar cancelamento")
+
+    If resp <> vbYes Then Exit Sub
+
+    Me.Hide
+    CancelarEmissaoPorID_UI idEmissao
+    Unload Me
+End Sub
+
+Private Sub cmdFechar_Click()
+    Unload Me
+End Sub
+
+Private Sub lstEmissoes_DblClick(ByVal Cancel As MSForms.ReturnBoolean)
+    cmdCancelar_Click
+End Sub
+
+Private Sub CarregarListaEmissoesCancelaveis()
+    Dim dados As Variant
+    Dim i As Long
+    Dim linha As Long
+
+    dados = ListaEmissoesCancelaveis_UI()
+
+   With Me.lstEmissoes
+    .Clear
+    .RowSource = ""
+    .ColumnCount = 7
+    .BoundColumn = 1
+    .ColumnHeads = False
+    .ColumnWidths = "150 pt;60 pt;70 pt;45 pt;50 pt;35 pt;45 pt"
+End With
+
+    If IsEmpty(dados) Then
+        MsgBox "Nao ha emissoes disponiveis para cancelamento.", vbInformation
+        Exit Sub
+    End If
+
+    For i = LBound(dados, 1) To UBound(dados, 1)
+    linha = Me.lstEmissoes.ListCount
+
+    Me.lstEmissoes.AddItem CStr(dados(i, 0))                  ' ID_EMISSAO
+    Me.lstEmissoes.List(linha, 1) = FormatDataBR_UI(dados(i, 1)) ' DATA
+    Me.lstEmissoes.List(linha, 2) = CStr(dados(i, 2))         ' ID_BALSA
+    Me.lstEmissoes.List(linha, 3) = CStr(dados(i, 3))         ' NOME
+    Me.lstEmissoes.List(linha, 4) = CStr(dados(i, 4))         ' MAQUINA
+    Me.lstEmissoes.List(linha, 5) = CStr(dados(i, 5))         ' TURNO
+    Me.lstEmissoes.List(linha, 6) = CStr(dados(i, 6))         ' QTD_NESTINGS
+  Next i
+
+    If Me.lstEmissoes.ListCount > 0 Then
+        Me.lstEmissoes.ListIndex = 0
+    End If
+End Sub
+
+Private Function GetIdEmissaoSelecionado() As String
+    If Me.lstEmissoes.ListIndex >= 0 Then
+        GetIdEmissaoSelecionado = Trim$(CStr(Me.lstEmissoes.List(Me.lstEmissoes.ListIndex, 0)))
+    End If
+End Function
+
+Private Function FormatDataBR_UI(ByVal v As Variant) As String
+    If IsDate(v) Then
+        FormatDataBR_UI = Format$(CDate(v), "dd/mm/yyyy")
+    ElseIf IsNumeric(v) Then
+        FormatDataBR_UI = Format$(DateSerial(1899, 12, 30) + CLng(v), "dd/mm/yyyy")
+    Else
+        FormatDataBR_UI = Trim$(CStr(v))
+    End If
+End Function
+
+
+
+========================================
+MODULO: frmConfirmarEmissao
+========================================
+Option Explicit
+
+Public Confirmado As Boolean
+
+Private Sub lblCab_Click()
+
+End Sub
+
+Private Sub lblResumo_Click()
+
+End Sub
+
+Private Sub lblTitulo_Click()
+
+End Sub
+
+Private Sub UserForm_Initialize()
+    Me.Caption = "Confirmar emissao"
+    Me.lblTitulo.Caption = "Confirmar emissao"
+    Me.lblResumo.Caption = ""
+    Me.lblCab.Caption = "NESTING                                  TEMPO               ESP            BLOCO                                          PAINEL                                     PECAS"
+
+    With Me.lstPreview
+        .Clear
+        .ColumnCount = 6
+        .ColumnWidths = "110 pt;55 pt;40 pt;120 pt;120 pt;45 pt"
+        .MultiSelect = fmMultiSelectSingle
+        .BoundColumn = 1
+    End With
+
+    Confirmado = False
+End Sub
+
+Public Sub CarregarDados(ByVal idEmissao As String, _
+                         ByVal idBalsa As String, _
+                         ByVal tipo As String, _
+                         ByVal nomeBalsa As String, _
+                         ByVal maquina As String, _
+                         ByVal turno As String, _
+                         ByVal dtEmissao As Variant, _
+                         ByVal selectedNestings As Object, _
+                         ByVal dictDisp As Object)
+
+    Dim arrOut() As Variant
+    Dim k As Variant
+    Dim itemInfo As Object
+    Dim linha As Long
+    Dim qtdLinhas As Long
+    Dim totalTempo As Double
+
+    qtdLinhas = 0
+    For Each k In selectedNestings.Keys
+        If dictDisp.Exists(CStr(k)) Then
+            qtdLinhas = qtdLinhas + 1
+        End If
+    Next k
+
+    Me.lstPreview.Clear
+
+    If qtdLinhas = 0 Then
+        Me.lblResumo.Caption = "Nenhum nesting valido para emissao."
+        Exit Sub
+    End If
+
+    ReDim arrOut(0 To qtdLinhas - 1, 0 To 5)
+
+    linha = -1
+    totalTempo = 0
+
+    For Each k In selectedNestings.Keys
+        If dictDisp.Exists(CStr(k)) Then
+            Set itemInfo = dictDisp(CStr(k))
+            linha = linha + 1
+
+            arrOut(linha, 0) = CStr(k)
+            arrOut(linha, 1) = TextoTempo(itemInfo("tempo"))
+            arrOut(linha, 2) = Txt(itemInfo("esp"))
+            arrOut(linha, 3) = JoinDictKeysLocal(itemInfo("blocos"), ", ")
+            arrOut(linha, 4) = JoinDictKeysLocal(itemInfo("painels"), ", ")
+            arrOut(linha, 5) = itemInfo("pecas").Count
+
+            If IsNumeric(itemInfo("tempo")) Then
+                totalTempo = totalTempo + CDbl(itemInfo("tempo"))
+            End If
+        End If
+    Next k
+
+    Me.lstPreview.List = arrOut
+
+    Me.lblResumo.Caption = _
+        "ID_EMISSAO: " & idEmissao & _
+        "   |   BALSA: " & idBalsa & _
+        "   |   MAQUINA: " & maquina & _
+        "   |   TURNO: " & turno & _
+        "   |   DATA: " & Txt(dtEmissao) & _
+        "   |   NESTINGS: " & qtdLinhas & _
+        "   |   TEMPO TOTAL: " & TextoTempo(totalTempo)
+End Sub
+
+Private Sub cmdConfirmar_Click()
+    Confirmado = True
+    Me.Hide
+End Sub
+
+Private Sub cmdCancelar_Click()
+    Confirmado = False
+    Me.Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    Confirmado = False
+End Sub
+
+Private Function Txt(ByVal v As Variant) As String
+    If IsError(v) Then
+        Txt = ""
+    ElseIf IsNull(v) Then
+        Txt = ""
+    Else
+        Txt = Trim$(CStr(v))
+    End If
+End Function
+
+Private Function TextoTempo(ByVal v As Variant) As String
+    On Error GoTo Fim
+
+    If IsNumeric(v) Then
+        TextoTempo = Application.WorksheetFunction.Text(CDbl(v), "[h]:mm")
+    Else
+        TextoTempo = Txt(v)
+    End If
+    Exit Function
+
+Fim:
+    TextoTempo = Txt(v)
+End Function
+
+Private Function JoinDictKeysLocal(ByVal dict As Object, Optional ByVal sep As String = ", ") As String
+    Dim k As Variant
+    Dim s As String
+
+    If dict Is Nothing Then Exit Function
+
+    For Each k In dict.Keys
+        If s <> "" Then s = s & sep
+        s = s & CStr(k)
+    Next k
+
+    JoinDictKeysLocal = s
+End Function
+
+
+
+========================================
+MODULO: Módulo1
+========================================
+Option Explicit
+
+Public Sub PrepararFiltroDashboardPaineis()
+    MontarDashboardPaineis "TODAS"
+End Sub
+
+Public Sub CarregarDashboardPaineisPorBalsa()
+    Dim wsDash As Worksheet
+    Dim balsaSelecionada As String
+
+    Set wsDash = ThisWorkbook.Worksheets("DASHBOARD")
+    balsaSelecionada = Trim$(CStr(wsDash.Range("M1").Value))
+
+    If balsaSelecionada = "" Then
+        MsgBox "Selecione uma balsa na caixa antes de carregar os dados.", vbExclamation
+        Exit Sub
+    End If
+
+    MontarDashboardPaineis balsaSelecionada
+End Sub
+
+Private Sub MontarDashboardPaineis(Optional ByVal filtroBalsa As String = "TODAS")
+
+    Dim wb As Workbook
+    Dim wsCtrl As Worksheet, wsDash As Worksheet, wsAuxPnl As Worksheet
+    Dim loCtrl As ListObject
+    Dim arr As Variant
+
+    Dim idxIdBalsa As Long, idxPainel As Long
+    Dim idxNesting As Long, idxStatus As Long, idxChaveNesting As Long
+
+    Dim dBalsas As Object
+    Dim dPnlMeta As Object, dPnlTotal As Object, dPnlProc As Object, dPnlConc As Object
+    Dim seenPnlTotal As Object, seenPnlProc As Object, seenPnlConc As Object
+
+    Dim i As Long
+    Dim idBalsa As String, painel As String
+    Dim nesting As String, chaveNesting As String, statusProc As String
+    Dim pnlKey As String, pairKey As String
+
+    Dim pnlKeys() As String
+    Dim balsaKeys() As String
+    Dim totalPaineis As Long, paineisAndamento As Long, paineisConcluidos As Long
+    Dim somaTotalPnl As Double, somaConcPnl As Double
+
+    Dim outPnl() As Variant
+    Dim rp As Long
+    Dim tot As Long, proc As Long, conc As Long
+    Dim pctProc As Double, pctConc As Double
+    Dim metaPnl As Variant
+
+    Dim oldCalc As XlCalculation
+    Dim oldScreen As Boolean, oldEvents As Boolean
+
+    On Error GoTo TrataErro
+
+    Set wb = ThisWorkbook
+
+    oldCalc = Application.Calculation
+    oldScreen = Application.ScreenUpdating
+    oldEvents = Application.EnableEvents
+
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+
+    Set wsCtrl = GetWs(wb, "CONTROLE_NESTINGS")
+    Set wsDash = GetWs(wb, "DASHBOARD")
+    Set loCtrl = GetTable(wsCtrl, "tblControle")
+
+    If loCtrl Is Nothing Then Err.Raise vbObjectError + 100, , "Tabela 'tblControle' não encontrada."
+    If loCtrl.DataBodyRange Is Nothing Then Err.Raise vbObjectError + 101, , "A tblControle está vazia."
+
+    arr = loCtrl.DataBodyRange.Value2
+
+    idxIdBalsa = HeaderIndex(loCtrl, "ID_BALSA")
+    idxPainel = HeaderIndex(loCtrl, "PAINEL")
+    idxNesting = HeaderIndex(loCtrl, "NESTING")
+    idxStatus = HeaderIndex(loCtrl, "STATUS_PROCESSO")
+    idxChaveNesting = HeaderIndex(loCtrl, "CHAVE_NESTING")
+
+    Set dBalsas = CreateObject("Scripting.Dictionary")
+    Set dPnlMeta = CreateObject("Scripting.Dictionary")
+    Set dPnlTotal = CreateObject("Scripting.Dictionary")
+    Set dPnlProc = CreateObject("Scripting.Dictionary")
+    Set dPnlConc = CreateObject("Scripting.Dictionary")
+
+    Set seenPnlTotal = CreateObject("Scripting.Dictionary")
+    Set seenPnlProc = CreateObject("Scripting.Dictionary")
+    Set seenPnlConc = CreateObject("Scripting.Dictionary")
+
+    ' =========================================================
+    ' LEITURA DA tblControle
+    ' =========================================================
+    For i = 1 To UBound(arr, 1)
+
+        idBalsa = Trim$(NzText(arr(i, idxIdBalsa)))
+        painel = Trim$(NzText(arr(i, idxPainel)))
+        nesting = Trim$(NzText(arr(i, idxNesting)))
+        statusProc = UCase$(Trim$(NzText(arr(i, idxStatus))))
+
+        If idxChaveNesting > 0 Then
+            chaveNesting = Trim$(NzText(arr(i, idxChaveNesting)))
+        Else
+            chaveNesting = ""
+        End If
+
+        If chaveNesting = "" Then
+            If idBalsa <> "" And nesting <> "" Then
+                chaveNesting = idBalsa & "|" & nesting
+            End If
+        End If
+
+        If idBalsa <> "" Then
+            If Not dBalsas.Exists(idBalsa) Then dBalsas.Add idBalsa, True
+        End If
+
+        If filtroBalsa <> "" And UCase$(filtroBalsa) <> "TODAS" Then
+            If UCase$(idBalsa) <> UCase$(filtroBalsa) Then GoTo ProximoI
+        End If
+
+        If idBalsa = "" Or painel = "" Or chaveNesting = "" Then GoTo ProximoI
+
+        pnlKey = idBalsa & "|" & painel
+
+        If Not dPnlMeta.Exists(pnlKey) Then
+            dPnlMeta.Add pnlKey, Array(idBalsa, painel)
+        End If
+
+        ' TOTAL
+        pairKey = pnlKey & "§" & chaveNesting
+        If Not seenPnlTotal.Exists(pairKey) Then
+            seenPnlTotal.Add pairKey, True
+            IncDict dPnlTotal, pnlKey
+        End If
+
+        ' PROCESSADOS
+        If statusProc = "EM PROCESSAMENTO" Or statusProc = "FINALIZADO" Then
+            pairKey = pnlKey & "§" & chaveNesting
+            If Not seenPnlProc.Exists(pairKey) Then
+                seenPnlProc.Add pairKey, True
+                IncDict dPnlProc, pnlKey
+            End If
+        End If
+
+        ' CONCLUÍDOS
+        If statusProc = "FINALIZADO" Then
+            pairKey = pnlKey & "§" & chaveNesting
+            If Not seenPnlConc.Exists(pairKey) Then
+                seenPnlConc.Add pairKey, True
+                IncDict dPnlConc, pnlKey
+            End If
+        End If
+
+ProximoI:
+    Next i
+
+    ' =========================================================
+    ' CRIA / LIMPA ABA AUXILIAR
+    ' =========================================================
+    Set wsAuxPnl = EnsureSheet(wb, "AUX_PAINEIS")
+    wsAuxPnl.Cells.Clear
+
+    wsAuxPnl.Range("A1:H1").Value = Array("ID_BALSA", "PAINEL", "TOTAL_NESTINGS", "PROCESSADOS", "CONCLUIDOS", "PENDENTES", "%PROCESSADO", "%CONCLUIDO")
+    wsAuxPnl.Range("I1").Value = "STATUS_PAINEL"
+
+    If dPnlMeta.Count > 0 Then
+        pnlKeys = DictKeysToArray(dPnlMeta)
+        QuickSortStrings pnlKeys, LBound(pnlKeys), UBound(pnlKeys)
+
+        ReDim outPnl(1 To UBound(pnlKeys) - LBound(pnlKeys) + 1, 1 To 9)
+
+        rp = 0
+        For i = LBound(pnlKeys) To UBound(pnlKeys)
+            rp = rp + 1
+            pnlKey = pnlKeys(i)
+            metaPnl = dPnlMeta(pnlKey)
+
+            tot = DictNum(dPnlTotal, pnlKey)
+            proc = DictNum(dPnlProc, pnlKey)
+            conc = DictNum(dPnlConc, pnlKey)
+
+            If tot > 0 Then
+                pctProc = proc / tot
+                pctConc = conc / tot
+            Else
+                pctProc = 0
+                pctConc = 0
+            End If
+
+            outPnl(rp, 1) = metaPnl(0) ' ID_BALSA
+            outPnl(rp, 2) = metaPnl(1) ' PAINEL
+            outPnl(rp, 3) = tot
+            outPnl(rp, 4) = proc
+            outPnl(rp, 5) = conc
+            outPnl(rp, 6) = tot - conc
+            outPnl(rp, 7) = pctProc
+            outPnl(rp, 8) = pctConc
+            outPnl(rp, 9) = StatusTexto(tot, proc, conc)
+
+            totalPaineis = totalPaineis + 1
+            somaTotalPnl = somaTotalPnl + tot
+            somaConcPnl = somaConcPnl + conc
+
+            Select Case outPnl(rp, 9)
+                Case "Concluído": paineisConcluidos = paineisConcluidos + 1
+                Case "Em andamento": paineisAndamento = paineisAndamento + 1
+            End Select
+        Next i
+
+        wsAuxPnl.Range("A2").Resize(UBound(outPnl, 1), UBound(outPnl, 2)).Value = outPnl
+    End If
+
+    FormataCabecalho wsAuxPnl.Range("A1:I1")
+    wsAuxPnl.Columns("A:I").AutoFit
+    wsAuxPnl.Columns("G:H").NumberFormat = "0,0%"
+
+    ' =========================================================
+    ' DASHBOARD
+    ' =========================================================
+    wsDash.Range("K:Z").Clear
+
+    ' Lista auxiliar de balsas para o dropdown
+    wsDash.Range("AA:AA").Clear
+    wsDash.Range("AA1").Value = "LISTA_BALSA"
+    wsDash.Range("AA2").Value = "TODAS"
+
+    If dBalsas.Count > 0 Then
+        balsaKeys = DictKeysToArray(dBalsas)
+        QuickSortStrings balsaKeys, LBound(balsaKeys), UBound(balsaKeys)
+
+        For i = LBound(balsaKeys) To UBound(balsaKeys)
+            wsDash.Cells(i + 3, "AA").Value = balsaKeys(i)
+        Next i
+    End If
+
+    wsDash.Columns("AA").Hidden = True
+
+    ' Caixa de seleção
+    With wsDash.Range("K1:L1")
+        .Merge
+        .Value = "SELECIONE A BALSA"
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(31, 78, 121)
+    End With
+
+    With wsDash.Range("M1")
+        .Validation.Delete
+        .Value = ""
+        .Validation.Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, _
+                        Formula1:="=" & wsDash.Name & "!$AA$2:$AA$" & wsDash.Cells(wsDash.Rows.Count, "AA").End(xlUp).Row
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Font.Bold = True
+        .Interior.Color = RGB(242, 242, 242)
+        .Borders.LineStyle = xlContinuous
+
+        If filtroBalsa = "" Then
+            .Value = "TODAS"
+        Else
+            .Value = filtroBalsa
+        End If
+    End With
+
+    ' Botão carregar dados
+    CriarOuAtualizarBotao wsDash, "btnCarregarDashboardPaineis", wsDash.Range("P1:S2"), "CARREGAR DADOS", "CarregarDashboardPaineisPorBalsa"
+
+    ' Título
+    With wsDash.Range("K4:T4")
+        .Merge
+        .Value = "DASHBOARD DE PAINÉIS - " & UCase$(wsDash.Range("M1").Value)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(31, 78, 121)
+    End With
+
+    ' Cards
+    CreateCard wsDash, "K6:M6", "K7:M8", "TOTAL DE PAINÉIS", totalPaineis, False
+    CreateCard wsDash, "O6:Q6", "O7:Q8", "PAINÉIS EM ANDAMENTO", paineisAndamento, False
+    CreateCard wsDash, "S6:U6", "S7:U8", "PAINÉIS CONCLUÍDOS", paineisConcluidos, False
+    CreateCard wsDash, "W6:Y6", "W7:Y8", "% CONCLUÍDO", IIf(somaTotalPnl > 0, somaConcPnl / somaTotalPnl, 0), True
+
+    ' Título da tabela
+    With wsDash.Range("K10:S10")
+        .Merge
+        .Value = "LISTA DE PAINÉIS"
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(31, 78, 121)
+    End With
+
+    ' Cabeçalhos
+    wsDash.Range("K11:S11").Value = Array("ID_BALSA", "PAINEL", "TOTAL", "PROCESSADOS", "CONCLUÍDOS", "PENDENTES", "%PROCESSADO", "%CONCLUÍDO", "STATUS")
+    FormataCabecalho wsDash.Range("K11:S11")
+
+    ' Dados
+    If totalPaineis > 0 Then
+        wsDash.Range("K12").Resize(UBound(outPnl, 1), UBound(outPnl, 2)).Value = outPnl
+        wsDash.Range("Q12:R" & 11 + UBound(outPnl, 1)).NumberFormat = "0,0%"
+    End If
+
+    wsDash.Columns("K:Y").AutoFit
+    
+    CriarGraficosDashboardPaineis wsDash, wsAuxPnl
+
+    MsgBox "Dashboard de painéis carregado com sucesso.", vbInformation
+
+SaiLimpo:
+    Application.ScreenUpdating = oldScreen
+    Application.EnableEvents = oldEvents
+    Application.Calculation = oldCalc
+    Exit Sub
+
+TrataErro:
+    MsgBox "Erro ao carregar dashboard de painéis: " & Err.Description, vbExclamation
+    Resume SaiLimpo
+
+End Sub
+
+Private Sub CriarOuAtualizarBotao(ByVal ws As Worksheet, _
+                                  ByVal nomeBotao As String, _
+                                  ByVal rngAlvo As Range, _
+                                  ByVal texto As String, _
+                                  ByVal macroName As String)
+
+    Dim shp As Shape
+    On Error Resume Next
+    ws.Shapes(nomeBotao).Delete
+    On Error GoTo 0
+
+    Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, rngAlvo.Left, rngAlvo.Top, rngAlvo.Width, rngAlvo.Height)
+
+    With shp
+        .Name = nomeBotao
+        .TextFrame2.TextRange.Text = texto
+        .OnAction = "'" & ThisWorkbook.Name & "'!" & macroName
+        .Fill.ForeColor.RGB = RGB(0, 112, 192)
+        .Line.ForeColor.RGB = RGB(0, 91, 156)
+        .TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+        .TextFrame2.TextRange.Font.Bold = msoTrue
+        .TextFrame2.VerticalAnchor = msoAnchorMiddle
+    End With
+End Sub
+
+Private Function GetWs(ByVal wb As Workbook, ByVal nome As String) As Worksheet
+    On Error Resume Next
+    Set GetWs = wb.Worksheets(nome)
+    On Error GoTo 0
+End Function
+
+Private Function EnsureSheet(ByVal wb As Workbook, ByVal nome As String) As Worksheet
+    On Error Resume Next
+    Set EnsureSheet = wb.Worksheets(nome)
+    On Error GoTo 0
+
+    If EnsureSheet Is Nothing Then
+        Set EnsureSheet = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        EnsureSheet.Name = nome
+    End If
+End Function
+
+Private Function GetTable(ByVal ws As Worksheet, ByVal tableName As String) As ListObject
+    On Error Resume Next
+    Set GetTable = ws.ListObjects(tableName)
+    On Error GoTo 0
+End Function
+
+Private Function HeaderIndex(ByVal lo As ListObject, ByVal headerName As String) As Long
+    Dim i As Long
+    For i = 1 To lo.ListColumns.Count
+        If UCase$(Trim$(lo.ListColumns(i).Name)) = UCase$(Trim$(headerName)) Then
+            HeaderIndex = i
+            Exit Function
+        End If
+    Next i
+    HeaderIndex = 0
+End Function
+
+Private Function NzText(ByVal v As Variant) As String
+    If IsError(v) Then
+        NzText = ""
+    ElseIf IsNull(v) Then
+        NzText = ""
+    ElseIf IsEmpty(v) Then
+        NzText = ""
+    Else
+        NzText = CStr(v)
+    End If
+End Function
+
+Private Sub IncDict(ByVal d As Object, ByVal key As String)
+    If d.Exists(key) Then
+        d(key) = CLng(d(key)) + 1
+    Else
+        d.Add key, 1
+    End If
+End Sub
+
+Private Function DictNum(ByVal d As Object, ByVal key As String) As Long
+    If d.Exists(key) Then
+        DictNum = CLng(d(key))
+    Else
+        DictNum = 0
+    End If
+End Function
+
+Private Function DictKeysToArray(ByVal d As Object) As String()
+    Dim arr() As String
+    Dim i As Long
+    Dim k As Variant
+
+    ReDim arr(0 To d.Count - 1)
+    i = 0
+    For Each k In d.Keys
+        arr(i) = CStr(k)
+        i = i + 1
+    Next k
+
+    DictKeysToArray = arr
+End Function
+
+Private Sub QuickSortStrings(ByRef arr() As String, ByVal first As Long, ByVal last As Long)
+    Dim i As Long, j As Long
+    Dim pivot As String, temp As String
+
+    i = first
+    j = last
+    pivot = arr((first + last) \ 2)
+
+    Do While i <= j
+        Do While arr(i) < pivot
+            i = i + 1
+        Loop
+        Do While arr(j) > pivot
+            j = j - 1
+        Loop
+
+        If i <= j Then
+            temp = arr(i)
+            arr(i) = arr(j)
+            arr(j) = temp
+            i = i + 1
+            j = j - 1
+        End If
+    Loop
+
+    If first < j Then QuickSortStrings arr, first, j
+    If i < last Then QuickSortStrings arr, i, last
+End Sub
+
+Private Function StatusTexto(ByVal total As Long, ByVal proc As Long, ByVal conc As Long) As String
+    If total <= 0 Then
+        StatusTexto = ""
+    ElseIf conc >= total Then
+        StatusTexto = "Concluído"
+    ElseIf proc > 0 Then
+        StatusTexto = "Em andamento"
+    Else
+        StatusTexto = "Não iniciado"
+    End If
+End Function
+
+Private Sub FormataCabecalho(ByVal rng As Range)
+    With rng
+        .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(31, 78, 121)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+End Sub
+
+Private Sub CreateCard(ByVal ws As Worksheet, _
+                       ByVal addrHeader As String, _
+                       ByVal addrValor As String, _
+                       ByVal titulo As String, _
+                       ByVal valor As Variant, _
+                       ByVal isPercent As Boolean)
+
+    With ws.Range(addrHeader)
+        .Merge
+        .Value = titulo
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(31, 78, 121)
+    End With
+
+    With ws.Range(addrValor)
+        .Merge
+        .Value = valor
+        .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
+        .Font.Bold = True
+        .Font.Size = 14
+        .Interior.Color = RGB(242, 242, 242)
+        If isPercent Then .NumberFormat = "0,0%"
+    End With
+End Sub
+
+Private Sub CriarGraficosDashboardPaineis(ByVal wsDash As Worksheet, ByVal wsAuxPnl As Worksheet)
+
+    Dim lastRow As Long
+    Dim chObj As ChartObject
+    Dim shp As Shape
+
+    lastRow = wsAuxPnl.Cells(wsAuxPnl.Rows.Count, "A").End(xlUp).Row
+
+    ' Apaga gráficos antigos
+    On Error Resume Next
+    wsDash.ChartObjects("chtPctConcluidoPainel").Delete
+    wsDash.ChartObjects("chtPendentesPainel").Delete
+    wsDash.Shapes("msgSemDadosGraficos").Delete
+    On Error GoTo 0
+
+    ' Se não houver dados, mostra aviso
+    If lastRow < 2 Then
+        Set shp = wsDash.Shapes.AddTextbox( _
+            Orientation:=msoTextOrientationHorizontal, _
+            Left:=wsDash.Range("U10").Left, _
+            Top:=wsDash.Range("U10").Top, _
+            Width:=wsDash.Range("Y22").Left + wsDash.Range("Y22").Width - wsDash.Range("U10").Left, _
+            Height:=80)
+
+        With shp
+            .Name = "msgSemDadosGraficos"
+            .TextFrame2.TextRange.Text = "Sem dados para gerar gráficos."
+            .TextFrame2.TextRange.Font.Size = 12
+            .TextFrame2.TextRange.Font.Bold = msoTrue
+            .TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(120, 120, 120)
+            .Fill.ForeColor.RGB = RGB(242, 242, 242)
+            .Line.ForeColor.RGB = RGB(200, 200, 200)
+        End With
+        Exit Sub
+    End If
+
+    ' =========================================================
+    ' GRÁFICO 1 - % CONCLUÍDO POR PAINEL
+    ' =========================================================
+    Set chObj = wsDash.ChartObjects.Add( _
+        Left:=wsDash.Range("U10").Left, _
+        Top:=wsDash.Range("U10").Top, _
+        Width:=wsDash.Range("Y24").Left + wsDash.Range("Y24").Width - wsDash.Range("U10").Left, _
+        Height:=wsDash.Range("Y24").Top + wsDash.Range("Y24").Height - wsDash.Range("U10").Top)
+
+    chObj.Name = "chtPctConcluidoPainel"
+
+    With chObj.Chart
+        .ChartType = xlColumnClustered
+        .HasTitle = True
+        .ChartTitle.Text = "% Concluído por Painel"
+
+        Do While .SeriesCollection.Count > 0
+            .SeriesCollection(1).Delete
+        Loop
+
+        With .SeriesCollection.NewSeries
+            .Name = "% Concluído"
+            .Values = wsAuxPnl.Range("H2:H" & lastRow)
+            .XValues = wsAuxPnl.Range("B2:B" & lastRow)
+        End With
+
+        .HasLegend = False
+        .Axes(xlValue).MinimumScale = 0
+        .Axes(xlValue).MaximumScale = 1
+        .Axes(xlValue).TickLabels.NumberFormat = "0%"
+        .Axes(xlCategory).TickLabelSpacing = 1
+    End With
+
+    ' =========================================================
+    ' GRÁFICO 2 - PENDENTES POR PAINEL
+    ' =========================================================
+    Set chObj = wsDash.ChartObjects.Add( _
+        Left:=wsDash.Range("U27").Left, _
+        Top:=wsDash.Range("U27").Top, _
+        Width:=wsDash.Range("Y41").Left + wsDash.Range("Y41").Width - wsDash.Range("U27").Left, _
+        Height:=wsDash.Range("Y41").Top + wsDash.Range("Y41").Height - wsDash.Range("U27").Top)
+
+    chObj.Name = "chtPendentesPainel"
+
+    With chObj.Chart
+        .ChartType = xlBarClustered
+        .HasTitle = True
+        .ChartTitle.Text = "Pendentes por Painel"
+
+        Do While .SeriesCollection.Count > 0
+            .SeriesCollection(1).Delete
+        Loop
+
+        With .SeriesCollection.NewSeries
+            .Name = "Pendentes"
+            .Values = wsAuxPnl.Range("F2:F" & lastRow)
+            .XValues = wsAuxPnl.Range("B2:B" & lastRow)
+        End With
+
+        .HasLegend = False
+        .Axes(xlCategory).TickLabelSpacing = 1
+    End With
+
+End Sub
+
+
+
+
+
+========================================
+MODULO: Planilha13
+========================================
+[MÃ³dulo sem linhas de cÃ³digo]
+
+
