@@ -16,6 +16,7 @@ import {
   Pencil,
   Plus
 } from "lucide-react";
+import { motion } from "framer-motion";
 
 // Carregamento dinâmico para evitar quebras se a lib não estiver pronta
 const getXLSX = () => import("xlsx");
@@ -123,7 +124,8 @@ export default function GerenciarCatalogo() {
     if (!importText.trim()) return;
     setIsAIProcessing(true);
     try {
-      const savedKey = localStorage.getItem("gemini_api_key") || import.meta.env.VITE_GEMINI_API_KEY;
+      const { data: keyData } = await supabase.from("system_settings").select("value").eq("key", "gemini_api_key").maybeSingle();
+      const savedKey = keyData?.value || localStorage.getItem("gemini_api_key") || import.meta.env.VITE_GEMINI_API_KEY;
       if (!savedKey) throw new Error("Chave API não configurada em Ajustes > Sistema.");
 
       const { GoogleGenerativeAI } = await getGemini();
@@ -376,6 +378,19 @@ export default function GerenciarCatalogo() {
     g.versao.toString() === searchTerm.toLowerCase().replace('v', '')
   );
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.05 }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: 10 },
+    show: { opacity: 1, scale: 1, y: 0 }
+  };
+
   return (
     <div className="space-y-6">
       <div className="glass-card p-5 bg-[#F8FAFC]/50 border-white/5">
@@ -421,9 +436,15 @@ export default function GerenciarCatalogo() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+      >
         {filteredGroups.map(g => (
-          <div 
+          <motion.div 
+            variants={itemVariants}
             key={g.nesting} 
             className={`glass-card p-5 border transition-all relative ${
               selectedNestings.includes(g.nesting) ? 'border-[#4F46E5] bg-[#4F46E5]/5 shadow-sm shadow-[#4F46E5]/10' : 'border-[#E2E8F0] group hover:border-[#4F46E5]/30'
@@ -459,9 +480,9 @@ export default function GerenciarCatalogo() {
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl"><span className="text-[9px] uppercase text-muted-foreground block mb-1">Peças</span><span className="text-sm font-black text-[#0F172A]">{g.total_pecas}</span></div>
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl"><span className="text-[9px] uppercase text-muted-foreground block mb-1">Peso</span><span className="text-sm font-black text-[#0F172A]">{g.total_peso.toFixed(0)}kg</span></div>
             </div>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
       {showImport && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0F172A]/50 p-4 backdrop-blur-sm">
           <div className="bg-[#FFFFFF] border border-[#E2E8F0] w-full max-w-4xl rounded-3xl p-6 md:p-10 flex flex-col gap-6 shadow-2xl overflow-hidden max-h-[95vh]">

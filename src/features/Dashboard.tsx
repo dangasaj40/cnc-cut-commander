@@ -19,8 +19,11 @@ import {
   Calendar,
   CheckCircle2,
   Package,
-  ArrowRight
+  ArrowRight,
+  Download
 } from "lucide-react";
+import { motion } from "framer-motion";
+import * as XLSX from "xlsx";
 
 type Period = "today" | "week" | "month";
 
@@ -156,14 +159,50 @@ export default function Dashboard() {
     };
   }, [totals, loading, period]);
 
+  const exportToExcel = () => {
+    if (rows.length === 0) {
+      alert("Nenhum dado de produção encontrado para este período.");
+      return;
+    }
+    const dataToExport = rows.map(r => ({
+      "Data": new Date(r.data + "T12:00:00").toLocaleDateString("pt-BR"),
+      "Nesting": r.nesting || "N/A",
+      "Qtd Peças": r.quantidade || 0,
+      "Peso Total (kg)": r.peso_total || 0
+    }));
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    ws['!cols'] = [{wch: 15}, {wch: 25}, {wch: 15}, {wch: 15}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Produção");
+    const fileName = `Relatorio_Producao_${period}_${format(new Date(), "yyyyMMdd")}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 }
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <SectionHeader
         code="DSH-01"
         title="Análise de Produção"
         right={
-          <div className="flex gap-1">
-            {(["today", "week", "month"] as const).map((p) => (
+          <div className="flex items-center gap-3">
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={exportToExcel} 
+              className="flex items-center gap-2 px-4 py-2 bg-[#F8FAFC] text-[#0F172A] border border-[#E2E8F0] text-xs font-bold uppercase rounded-full hover:bg-[#E2E8F0] transition-colors"
+            >
+              <Download size={14} /> Exportar Excel
+            </motion.button>
+            <div className="flex gap-1">
+              {(["today", "week", "month"] as const).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
@@ -175,12 +214,18 @@ export default function Dashboard() {
                 {p === "today" ? "Hoje" : p === "week" ? "Semana" : "Mês"}
               </button>
             ))}
+            </div>
           </div>
         }
       />
 
       {/* Top 3 Large Cards */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <motion.section 
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+        className="grid grid-cols-1 md:grid-cols-3 gap-6"
+      >
         <Metric 
           label="Peças Cortadas" 
           value={loading ? "—" : totals.pieces} 
@@ -237,10 +282,15 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </Metric>
-      </section>
+      </motion.section>
 
       {/* Bottom Row - Novos Cards */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <motion.section 
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+        className="grid grid-cols-1 md:grid-cols-3 gap-6"
+      >
         
         {/* Turno do Dia */}
         <NestingListCard 
@@ -259,7 +309,10 @@ export default function Dashboard() {
         />
 
         {/* Últimos Lançamentos (Catálogo) */}
-        <div className="glass-card p-0 overflow-hidden flex flex-col animate-slide-up" style={{ animationDelay: "300ms" }}>
+        <motion.div 
+          variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
+          className="glass-card p-0 overflow-hidden flex flex-col"
+        >
           <div className="p-6 pb-3 border-b border-[#E2E8F0]">
             <span className="text-sm font-semibold text-[#0F172A] flex items-center gap-2">
                <Package size={16} className="text-[#94A3B8]" /> Últimos Nestings Carregados
@@ -301,8 +354,8 @@ export default function Dashboard() {
                 Ver Todos no Catálogo <ArrowRight size={12} />
              </span>
           </Link>
-        </div>
-      </section>
+        </motion.div>
+      </motion.section>
     </div>
   );
 }
@@ -320,7 +373,10 @@ function SummaryRow({ label, value, highlight }: { label: string; value: string,
 
 function NestingListCard({ title, nestings, icon, delay }: { title: string, nestings: any[], icon: React.ReactNode, delay: string }) {
   return (
-    <div className="glass-card p-0 flex flex-col min-h-[220px] animate-slide-up overflow-hidden" style={{ animationDelay: delay }}>
+    <motion.div 
+      variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
+      className="glass-card p-0 flex flex-col min-h-[220px] overflow-hidden"
+    >
       <div className="p-6 pb-3 border-b border-[#E2E8F0]">
         <span className="text-sm font-semibold text-[#0F172A] flex items-center gap-2">
            {icon} {title}
@@ -368,6 +424,6 @@ function NestingListCard({ title, nestings, icon, delay }: { title: string, nest
       <div className="p-3 bg-[#F1F5F9] border-t border-[#E2E8F0] text-center">
          <span className="text-[10px] font-black text-primary uppercase tracking-widest">Total: {nestings.length} Nestings</span>
       </div>
-    </div>
+    </motion.div>
   );
 }

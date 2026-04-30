@@ -1,4 +1,5 @@
 import React from "react";
+import { motion } from "framer-motion";
 
 interface Props {
   label: string;
@@ -14,7 +15,15 @@ interface Props {
 
 export function Metric({ label, unit, value, hint, highlight, icon, badge, badgeVariant = "success", children }: Props) {
   return (
-    <div className="glass-card flex flex-col min-h-[260px] relative overflow-hidden transition-all group p-1">
+    <motion.div 
+      variants={{
+        hidden: { opacity: 0, y: 20 },
+        show: { opacity: 1, y: 0 }
+      }}
+      whileHover={{ y: -4, scale: 1.01 }}
+      whileTap={{ scale: 0.98 }}
+      className="glass-card flex flex-col min-h-[260px] relative overflow-hidden transition-all group p-1"
+    >
       {/* Top Content Area */}
       <div className="p-5 flex-1 flex flex-col">
         <div className="flex justify-between items-start mb-4">
@@ -61,6 +70,6 @@ export function Metric({ label, unit, value, hint, highlight, icon, badge, badge
           {children}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
