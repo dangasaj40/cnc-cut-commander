@@ -27,7 +27,7 @@ export function SectionHeader({ code, title, subtitle, right }: Props) {
         </h1>
       </div>
 
-      {right && <div className="flex items-center gap-2 bg-[#FFFFFF] p-1.5 rounded-full shadow-sm border border-[#E2E8F0]">{right}</div>}
+      {right && <div className="flex items-center gap-3 bg-white/80 backdrop-blur-md p-2 rounded-2xl shadow-sm border border-slate-200/60">{right}</div>}
     </div>
   );
 }

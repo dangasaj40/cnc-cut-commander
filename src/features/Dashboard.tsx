@@ -27,9 +27,12 @@ import {
   BarChart3
 } from "lucide-react";
 import { motion } from "framer-motion";
-import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
-type Period = "today" | "week" | "month";
+type Period = "today" | "week" | "month" | "total";
 
 interface Row {
   data: string;
@@ -39,7 +42,7 @@ interface Row {
 }
 
 export default function Dashboard() {
-  const [period, setPeriod] = useState<Period>("today");
+  const [period, setPeriod] = useState<Period>("total");
   const [balsasData, setBalsasData] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,17 +109,25 @@ export default function Dashboard() {
               if (row.status_processo === "Em processamento") groups[p].emitidos.add(row.nesting);
            });
 
-           const stats = Object.values(groups).map(g => ({
-              painel: g.painel,
-              total: g.total.size,
-              finalizados: g.finalizados.size,
-              pendentes: g.total.size - g.finalizados.size,
-              pesoTotal: g.pesoTotal,
-              pesoFinalizado: g.pesoFinalizado,
-              tempoTotal: g.tempoTotal,
-              tempoPendente: g.tempoPendente,
-              percentual: g.total.size > 0 ? (g.finalizados.size / g.total.size) * 100 : 0
-           }));
+           const stats = Object.values(groups).map(g => {
+              const total = g.total.size;
+              const finalizados = g.finalizados.size;
+              const emitidos = g.emitidos.size + finalizados; // No Excel, Processados = Emitidos + Concluídos
+              
+              return {
+                 painel: g.painel,
+                 total: total,
+                 processados: emitidos, // Equivalente ao Excel
+                 concluidos: finalizados,
+                 pendentes: total - finalizados,
+                 pesoTotal: g.pesoTotal,
+                 pesoFinalizado: g.pesoFinalizado,
+                 tempoTotal: g.tempoTotal,
+                 tempoPendente: g.tempoPendente,
+                 percentualProcessado: total > 0 ? (emitidos / total) * 100 : 0,
+                 percentualConcluido: total > 0 ? (finalizados / total) * 100 : 0
+              };
+           });
            setPanelStats(stats);
         }
       }
@@ -128,15 +139,14 @@ export default function Dashboard() {
         .order("data_registro", { ascending: false });
 
       if (period === "today") {
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        query = query.gte("data_registro", today.toISOString());
+        const todayStr = format(new Date(), "yyyy-MM-dd");
+        query = query.gte("data_registro", `${todayStr}T00:00:00`);
       } else if (period === "week") {
         const weekAgo = subDays(new Date(), 7);
         query = query.gte("data_registro", weekAgo.toISOString());
       } else if (period === "month") {
-        const monthStart = startOfMonth(new Date());
-        query = query.gte("data_registro", monthStart.toISOString());
+        const monthAgo = subDays(new Date(), 30);
+        query = query.gte("data_registro", monthAgo.toISOString());
       }
       // Se for "total", não aplicamos filtro de data
 
@@ -224,26 +234,110 @@ export default function Dashboard() {
     };
   }, [totals, loading, period]);
 
-  const exportToExcel = () => {
-    if (logs.length === 0) {
-      alert("Nenhum dado de produção encontrado.");
-      return;
-    }
-    const dataToExport = logs.map(log => ({
-      "Data": format(new Date(log.data_registro), "dd/MM/yyyy HH:mm"),
-      "Balsa": log.id_balsa,
-      "Nesting": log.nesting,
-      "Máquina": log.maquina,
-      "Operador": log.operador,
-      "Peso (kg)": log.peso_total || 0,
-      "Peças": log.pecas_agrupadas
-    }));
+  const exportToPDF = async () => {
+    const doc = new jsPDF('l', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 10;
     
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Produção Consolidada");
-    const fileName = `Relatorio_CNC_${format(new Date(), "yyyyMMdd_HHmm")}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    // 1. Barra de Título Superior
+    doc.setFillColor(31, 58, 102); 
+    doc.rect(margin, margin, pageWidth - 80, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    
+    const title = selectedBalsaId ? "RELATÓRIO DE PRODUÇÃO POR PAINEL" : "RELATÓRIO CONSOLIDADO DE PRODUÇÃO";
+    doc.text(title, (pageWidth - 80) / 2 + 10, margin + 5, { align: 'center' });
+
+    // 2. Logo (Canto Superior Direito)
+    try {
+      doc.addImage("/logo.jpg", "JPEG", pageWidth - 60, margin, 50, 20);
+    } catch(e) {}
+
+    // 3. Grid de Informações
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+
+    const drawField = (x: number, y: number, w: number, h: number, label: string, value: string, labelW: number = 30) => {
+      doc.setFillColor(31, 58, 102);
+      doc.rect(x, y, labelW, h, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text(label, x + 2, y + 3.2);
+      doc.setTextColor(0, 0, 0);
+      doc.setDrawColor(100, 100, 100);
+      doc.rect(x + labelW, y, w - labelW, h);
+      doc.setFont("helvetica", "normal");
+      doc.text(String(value || ""), x + labelW + 2, y + 3.2);
+      doc.setFont("helvetica", "bold");
+    };
+
+    let currentY = 22;
+    if (selectedBalsaId) {
+       drawField(margin, currentY, 80, 5, "BALSA", selectedBalsaId);
+       currentY += 5;
+       const balsa = balsasData.find(b => b.id_balsa === selectedBalsaId);
+       drawField(margin, currentY, 80, 5, "TIPO / NOME", `${balsa?.tipo_balsa || ""} - ${balsa?.nome_balsa || ""}`);
+    } else {
+       drawField(margin, currentY, 80, 5, "PERÍODO", period.toUpperCase());
+       currentY += 5;
+       drawField(margin, currentY, 80, 5, "TOTAL PESO", `${totals.totalPeso.toFixed(1)} kg`);
+    }
+    
+    currentY = 22;
+    drawField(margin + 90, currentY, 60, 5, "DATA_RELATORIO", format(new Date(), "dd/MM/yyyy HH:mm"));
+    currentY += 5;
+    drawField(margin + 90, currentY, 60, 5, "SISTEMA", "CNC CUT COMMANDER");
+
+    // 4. Tabela de Dados
+    let tableHead, tableBody, colStyles;
+    if (selectedBalsaId) {
+      tableHead = [["Painel", "Total Nestings", "Processados", "Concluídos", "Pendentes", "% Concluído", "Peso Total (kg)"]];
+      tableBody = panelStats.map(p => [
+        p.painel,
+        p.total,
+        p.processados,
+        p.concluidos,
+        p.pendentes,
+        `${p.percentualConcluido.toFixed(1)}%`,
+        Number(p.pesoTotal || 0).toFixed(1)
+      ]);
+      colStyles = { 0: { cellWidth: 50 }, 5: { halign: 'center' }, 6: { halign: 'right' } };
+    } else {
+      tableHead = [["Data/Hora", "Balsa", "Nesting", "Máquina", "Operador", "Peso (kg)", "Peças Agrupadas"]];
+      tableBody = logs.map(log => [
+        format(new Date(log.data_registro), "dd/MM/yyyy HH:mm"),
+        log.id_balsa,
+        log.nesting,
+        log.maquina,
+        log.operador,
+        Number(log.peso_total || 0).toFixed(1),
+        log.pecas_agrupadas
+      ]);
+      colStyles = { 0: { cellWidth: 35 }, 5: { halign: 'right' }, 6: { cellWidth: 80 } };
+    }
+
+    autoTable(doc, {
+      startY: 40,
+      head: tableHead,
+      body: tableBody,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [31, 58, 102],
+        textColor: [255, 255, 255],
+        fontSize: 8,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      styles: {
+        fontSize: 7,
+        cellPadding: 2,
+        valign: 'middle'
+      },
+      columnStyles: colStyles
+    });
+
+    doc.save(selectedBalsaId ? `Relatorio_Paineis_${selectedBalsaId}.pdf` : `Relatorio_Consolidado_${format(new Date(), "yyyyMMdd")}.pdf`);
   };
 
   const containerVariants = {
@@ -260,35 +354,42 @@ export default function Dashboard() {
         code="DSH-01"
         title="Dashboard de Produção"
         right={
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-               <span className="text-[10px] font-black uppercase text-slate-400">Análise Específica:</span>
-                <select 
-                  className="field py-1.5 px-4 text-xs font-bold"
-                  value={period}
-                  onChange={e => setPeriod(e.target.value as any)}
-                >
-                  <option value="today">Hoje</option>
-                  <option value="week">Última Semana</option>
-                  <option value="month">Este Mês</option>
-                  <option value="total">Total Acumulado</option>
-                </select>
-               <select 
-                 className="field py-1.5 px-4 text-xs font-bold"
-                 value={selectedBalsaId}
-                 onChange={e => setSelectedBalsaId(e.target.value)}
-               >
-                 <option value="">Visão Geral (Todas)</option>
-                 {balsasData.map(b => <option key={b.id_balsa} value={b.id_balsa}>{b.id_balsa}</option>)}
-               </select>
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="relative flex-1 sm:flex-none">
+                  <Calendar size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <select 
+                    className="field pl-9 pr-4 py-2 text-[11px] font-bold bg-slate-50/50 border-slate-200/50 w-full sm:w-32"
+                    value={period}
+                    onChange={e => setPeriod(e.target.value as any)}
+                  >
+                    <option value="today">Hoje</option>
+                    <option value="week">Semana</option>
+                    <option value="month">Mês</option>
+                    <option value="total">Acumulado</option>
+                  </select>
+                </div>
+
+                <div className="relative flex-1 sm:flex-none">
+                  <Package size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <select 
+                    className="field pl-9 pr-4 py-2 text-[11px] font-bold bg-slate-50/50 border-slate-200/50 w-full sm:w-40"
+                    value={selectedBalsaId}
+                    onChange={e => setSelectedBalsaId(e.target.value)}
+                  >
+                    <option value="">Todas Balsas</option>
+                    {balsasData.map(b => <option key={b.id_balsa} value={b.id_balsa}>{b.id_balsa}</option>)}
+                  </select>
+                </div>
             </div>
+            
             <motion.button 
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={exportToExcel} 
-              className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black uppercase rounded-full hover:bg-slate-200 transition-colors"
+              whileHover={{ scale: 1.02, backgroundColor: '#f8fafc' }}
+              whileTap={{ scale: 0.98 }}
+              onClick={exportToPDF} 
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-white text-slate-600 border border-slate-200 text-[10px] font-black uppercase rounded-xl hover:shadow-sm transition-all w-full sm:w-auto"
             >
-              <Download size={14} /> Exportar
+              <Download size={14} className="text-primary" /> Exportar
             </motion.button>
           </div>
         }
@@ -320,7 +421,7 @@ export default function Dashboard() {
                <span className="text-[10px] font-bold text-slate-400">ATUALIZADO EM TEMPO REAL</span>
             </div>
             <div className="overflow-x-auto">
-               <table className="w-full text-left border-collapse">
+               <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
                      <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100">
                         <th className="p-4">ID Balsa</th>
@@ -335,14 +436,14 @@ export default function Dashboard() {
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                      {balsasData.map(b => (
-                       <tr key={b.id_balsa} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-4 font-black text-slate-800">{b.id_balsa}</td>
-                          <td className="p-4 text-xs font-bold text-slate-500 uppercase">{b.tipo_balsa}</td>
-                          <td className="p-4 text-xs font-bold">{(b.pendentes + b.emitidos + b.finalizados)}</td>
-                          <td className="p-4 text-xs font-bold text-primary">{b.emitidos}</td>
-                          <td className="p-4 text-xs font-bold text-green-600">{b.finalizados}</td>
-                          <td className="p-4 text-xs font-bold text-slate-400">{b.pendentes}</td>
-                          <td className="p-4">
+                       <tr key={b.id_balsa} className="hover:bg-slate-50 transition-colors border-b border-slate-50">
+                          <td className="p-4 font-black text-slate-800 whitespace-nowrap">{b.id_balsa}</td>
+                          <td className="p-4 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">{b.tipo_balsa}</td>
+                          <td className="p-4 text-xs font-bold whitespace-nowrap">{(b.pendentes + b.emitidos + b.finalizados)}</td>
+                          <td className="p-4 text-xs font-bold text-primary whitespace-nowrap">{b.emitidos}</td>
+                          <td className="p-4 text-xs font-bold text-green-600 whitespace-nowrap">{b.finalizados}</td>
+                          <td className="p-4 text-xs font-bold text-slate-400 whitespace-nowrap">{b.pendentes}</td>
+                          <td className="p-4 whitespace-nowrap">
                              <div className="flex items-center gap-2">
                                 <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden w-20">
                                    <div className="h-full bg-primary" style={{ width: `${b.percentual_concluido * 100}%` }} />
@@ -350,7 +451,7 @@ export default function Dashboard() {
                                 <span className="text-[10px] font-black">{(b.percentual_concluido * 100).toFixed(1)}%</span>
                              </div>
                           </td>
-                          <td className="p-4">
+                          <td className="p-4 whitespace-nowrap">
                              <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md border ${
                                b.percentual_concluido >= 1 ? 'bg-green-50 text-green-600 border-green-100' : 'bg-primary/5 text-primary border-primary/10'
                              }`}>
@@ -400,30 +501,30 @@ export default function Dashboard() {
         </>
       ) : (
         <>
-          {/* Dashboard de Painéis (Igual Excel após selecionar Balsa) */}
+          {/* Dashboard de Painéis (Estilo Excel AUX_PAINEIS) */}
           <div className="flex flex-col gap-6">
-             <div className="flex justify-between items-end bg-primary/5 p-8 rounded-[40px] border border-primary/10">
+             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end bg-primary/5 p-6 lg:p-8 rounded-[30px] lg:rounded-[40px] border border-primary/10 gap-6">
                 <div>
-                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-2 block">Análise Detalhada</span>
-                   <h2 className="text-4xl font-black text-slate-800 tracking-tighter">Dashboard de Painéis: <span className="text-primary">{selectedBalsaId}</span></h2>
+                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-2 block">Análise Técnica de Fluxo</span>
+                   <h2 className="text-2xl lg:text-4xl font-black text-slate-800 tracking-tighter">Status de Painéis: <span className="text-primary">{selectedBalsaId}</span></h2>
                 </div>
-                <div className="grid grid-cols-4 gap-8 text-right">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-8 text-left lg:text-right w-full lg:w-auto">
                    <div>
-                      <div className="text-[10px] font-black uppercase text-slate-400 mb-1">Painéis</div>
-                      <div className="text-2xl font-black text-slate-800">{panelStats.length}</div>
+                      <div className="text-[9px] lg:text-[10px] font-black uppercase text-slate-400 mb-0.5 lg:mb-1">Total Nestings</div>
+                      <div className="text-xl lg:text-2xl font-black text-slate-800">{panelStats.reduce((acc, p) => acc + p.total, 0)}</div>
                    </div>
                    <div>
-                      <div className="text-[10px] font-black uppercase text-slate-400 mb-1">Em Andamento</div>
-                      <div className="text-2xl font-black text-slate-800">{panelStats.filter(p => p.percentual < 100 && p.percentual > 0).length}</div>
+                      <div className="text-[9px] lg:text-[10px] font-black uppercase text-slate-400 mb-0.5 lg:mb-1">Processados</div>
+                      <div className="text-xl lg:text-2xl font-black text-indigo-600">{panelStats.reduce((acc, p) => acc + p.processados, 0)}</div>
                    </div>
                    <div>
-                      <div className="text-[10px] font-black uppercase text-slate-400 mb-1">Concluídos</div>
-                      <div className="text-2xl font-black text-green-600">{panelStats.filter(p => p.percentual >= 100).length}</div>
+                      <div className="text-[9px] lg:text-[10px] font-black uppercase text-slate-400 mb-0.5 lg:mb-1">Concluídos</div>
+                      <div className="text-xl lg:text-2xl font-black text-emerald-600">{panelStats.reduce((acc, p) => acc + p.concluidos, 0)}</div>
                    </div>
                    <div>
-                      <div className="text-[10px] font-black uppercase text-slate-400 mb-1">% Global</div>
-                      <div className="text-2xl font-black text-primary">
-                         {(panelStats.reduce((acc, p) => acc + p.percentual, 0) / (panelStats.length || 1)).toFixed(1)}%
+                      <div className="text-[9px] lg:text-[10px] font-black uppercase text-slate-400 mb-0.5 lg:mb-1">% Global</div>
+                      <div className="text-xl lg:text-2xl font-black text-primary">
+                         {((panelStats.reduce((acc, p) => acc + p.percentualConcluido, 0)) / (panelStats.length || 1)).toFixed(1)}%
                       </div>
                    </div>
                 </div>
@@ -431,72 +532,73 @@ export default function Dashboard() {
 
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Gráfico 1: % Concluído por Painel */}
-                <div className="glass-card p-6 min-h-[400px] flex flex-col" style={{ minHeight: '400px' }}>
+                <div className="glass-card p-6 min-h-[400px] flex flex-col">
                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-6 flex items-center gap-2">
-                      <BarChart3 size={14} className="text-primary" /> Status por Painel (Nestings)
+                      <BarChart3 size={14} className="text-emerald-500" /> Progresso de Conclusão (% Finalizado)
                    </h3>
                    <div className="flex-1 w-full" style={{ height: '300px' }}>
                       <ResponsiveContainer width="100%" height="100%">
-                         <BarChart data={panelStats} layout="vertical" margin={{ left: 40, right: 40 }}>
+                         <BarChart data={panelStats} layout="vertical" margin={{ left: 0, right: 30, top: 0, bottom: 0 }}>
                             <XAxis type="number" hide domain={[0, 100]} />
-                            <YAxis dataKey="painel" type="category" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 'bold'}} width={100} />
+                            <YAxis dataKey="painel" type="category" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 'bold'}} width={50} />
                             <Tooltip cursor={{ fill: '#F8FAFC' }} />
-                            <Bar dataKey="percentual" fill="#4F46E5" radius={[0, 4, 4, 0]} barSize={20} />
+                            <Bar dataKey="percentualConcluido" fill="#10B981" radius={[0, 4, 4, 0]} barSize={16} />
                          </BarChart>
                       </ResponsiveContainer>
                    </div>
                 </div>
 
-                {/* Gráfico 2: Pendentes por Painel */}
-                <div className="glass-card p-6 min-h-[400px] flex flex-col" style={{ minHeight: '400px' }}>
+                {/* Gráfico 2: % Processado (Emitido) por Painel */}
+                <div className="glass-card p-6 min-h-[400px] flex flex-col">
                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-6 flex items-center gap-2">
-                      <Layers size={14} className="text-red-500" /> Nestings Pendentes por Painel
+                      <Download size={14} className="text-indigo-500" /> Status de Emissão (Processados)
                    </h3>
                    <div className="flex-1 w-full" style={{ height: '300px' }}>
                       <ResponsiveContainer width="100%" height="100%">
-                         <BarChart data={panelStats} layout="vertical" margin={{ left: 40, right: 40 }}>
-                            <XAxis type="number" hide />
-                            <YAxis dataKey="painel" type="category" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 'bold'}} width={100} />
+                         <BarChart data={panelStats} layout="vertical" margin={{ left: 0, right: 30, top: 0, bottom: 0 }}>
+                            <XAxis type="number" hide domain={[0, 100]} />
+                            <YAxis dataKey="painel" type="category" axisLine={false} tickLine={false} tick={{fontSize: 8, fontWeight: 'bold'}} width={50} />
                             <Tooltip cursor={{ fill: '#F8FAFC' }} />
-                            <Bar dataKey="pendentes" fill="#EF4444" radius={[0, 4, 4, 0]} barSize={20} />
+                            <Bar dataKey="percentualProcessado" fill="#4F46E5" radius={[0, 4, 4, 0]} barSize={16} />
                          </BarChart>
                       </ResponsiveContainer>
                    </div>
                 </div>
              </div>
              
-             {/* Lista de Painéis (Tabela) */}
-             <div className="glass-card p-0 overflow-hidden">
-                <table className="w-full text-left border-collapse">
+             {/* Lista de Painéis (Tabela Estilo AUX_PAINEIS) */}
+             <div className="glass-card p-0 overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[600px]">
                    <thead>
                       <tr className="bg-slate-50 text-[9px] font-black uppercase text-slate-400 border-b border-slate-100">
                          <th className="p-4">Painel</th>
-                         <th className="p-4">Nesting (Final/Total)</th>
-                         <th className="p-4 text-right">Peso Total (kg)</th>
-                         <th className="p-4 text-right">Falta Cortar (kg)</th>
-                         <th className="p-4 text-right">Tempo Restante</th>
+                         <th className="p-4">Total Nestings</th>
+                         <th className="p-4">Processados</th>
+                         <th className="p-4">Concluídos</th>
+                         <th className="p-4">Pendentes</th>
                          <th className="p-4 text-center">% Concl.</th>
-                         <th className="p-4">Status</th>
+                         <th className="p-4">Status Painel</th>
                       </tr>
                    </thead>
                    <tbody className="divide-y divide-slate-50">
                       {panelStats.map(p => (
-                        <tr key={p.painel} className="hover:bg-slate-50 transition-colors">
-                           <td className="p-4 font-black text-xs text-slate-800">{p.painel}</td>
-                           <td className="p-4 text-xs font-bold">{p.finalizados} / {p.total}</td>
-                           <td className="p-4 text-right text-xs font-bold text-slate-600">{(p.pesoTotal || 0).toFixed(1)}</td>
-                           <td className="p-4 text-right text-xs font-black text-red-500">{((p.pesoTotal || 0) - (p.pesoFinalizado || 0)).toFixed(1)}</td>
-                           <td className="p-4 text-right text-xs font-black text-primary">
-                              {format(new Date(0,0,0,0,0, (p.tempoPendente || 0) * 86400), "HH:mm")}
+                        <tr key={p.painel} className="hover:bg-slate-50 transition-colors border-b border-slate-50">
+                           <td className="p-4 font-black text-xs text-slate-800 whitespace-nowrap">{p.painel}</td>
+                           <td className="p-4 text-xs font-bold text-slate-400 whitespace-nowrap">{p.total}</td>
+                           <td className="p-4 text-xs font-bold text-indigo-600 whitespace-nowrap">{p.processados}</td>
+                           <td className="p-4 text-xs font-bold text-emerald-600 whitespace-nowrap">{p.concluidos}</td>
+                           <td className="p-4 text-xs font-bold text-red-500 whitespace-nowrap">{p.pendentes}</td>
+                           <td className="p-4 text-center whitespace-nowrap">
+                              <span className="text-[10px] font-black">{(p.percentualConcluido || 0).toFixed(1)}%</span>
                            </td>
-                           <td className="p-4 text-center">
-                              <span className="text-[10px] font-black">{(p.percentual || 0).toFixed(1)}%</span>
-                           </td>
-                           <td className="p-4">
+                           <td className="p-4 whitespace-nowrap">
                               <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
-                                (p.percentual || 0) >= 100 ? 'bg-green-50 text-green-600 border-green-100' : 'bg-slate-50 text-slate-400 border-slate-100'
+                                (p.percentualConcluido || 0) >= 100 ? 'bg-green-50 text-green-600 border-green-100' : 
+                                (p.percentualConcluido || 0) > 0 ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                                'bg-slate-50 text-slate-400 border-slate-100'
                               }`}>
-                                 {(p.percentual || 0) >= 100 ? 'CONCLUÍDO' : 'EM CORTE'}
+                                 {(p.percentualConcluido || 0) >= 100 ? 'CONCLUÍDO' : 
+                                  (p.percentualConcluido || 0) > 0 ? 'EM ANDAMENTO' : 'NÃO INICIADO'}
                               </span>
                            </td>
                         </tr>

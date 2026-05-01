@@ -17,7 +17,7 @@ import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
   Cell, Legend
 } from "recharts";
-import { format, startOfMonth, endOfMonth } from "date-fns";
+import { format, startOfMonth, endOfMonth, subDays } from "date-fns";
 import { motion } from "framer-motion";
 
 interface OperatorStat {
@@ -32,8 +32,8 @@ export default function RankingOperadores() {
   const [stats, setStats] = useState<OperatorStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState({
-    start: format(startOfMonth(new Date()), "yyyy-MM-dd"),
-    end: format(endOfMonth(new Date()), "yyyy-MM-dd")
+    start: format(subDays(new Date(), 90), "yyyy-MM-dd"),
+    end: format(new Date(), "yyyy-MM-dd")
   });
 
   useEffect(() => {
@@ -43,32 +43,40 @@ export default function RankingOperadores() {
   const fetchStats = async () => {
     setLoading(true);
     
-    // Buscar todos os registros que possuem operador (o que indica que foram finalizados)
-    const { data: logs } = await supabase
-      .from("controle_nestings")
-      .select("operador, nesting, peso_total, data_finalizacao")
-      .not("operador", "is", null);
+    // Buscar do log_retorno (fonte correta: registros de baixa de produção finalizados pelo operador)
+    const { data: logs, error } = await supabase
+      .from("log_retorno")
+      .select("operador, nesting, peso_total, pecas_agrupadas, data_registro")
+      .not("operador", "is", null)
+      .gte("data_registro", `${dateRange.start}T00:00:00`)
+      .lte("data_registro", `${dateRange.end}T23:59:59`);
 
+    if (error) console.error("Erro ao buscar operadores:", error);
 
     if (logs) {
-      const map: Record<string, { nome: string, totalPecas: number, totalPeso: number, uniqueNestings: Set<string>, eficiencia: number }> = {};
+      const map: Record<string, { nome: string, totalPecas: number, totalPeso: number, uniqueNestings: Set<string> }> = {};
       
       logs.forEach(log => {
         const op = log.operador?.trim();
-        if (!op) return; // Ignora se estiver vazio ou nulo
+        if (!op) return;
         
         if (!map[op]) {
-          map[op] = { nome: op, totalPecas: 0, totalPeso: 0, uniqueNestings: new Set(), eficiencia: 0 };
+          map[op] = { nome: op, totalPecas: 0, totalPeso: 0, uniqueNestings: new Set() };
+        }
+
+        // Contar peças corretamente: pecas_agrupadas pode ser "PEÇA1,PEÇA2,..." ou um número
+        if (log.pecas_agrupadas) {
+          if (typeof log.pecas_agrupadas === "string" && log.pecas_agrupadas.includes(",")) {
+            map[op].totalPecas += log.pecas_agrupadas.split(",").length;
+          } else {
+            const num = parseInt(log.pecas_agrupadas);
+            map[op].totalPecas += isNaN(num) ? 1 : num;
+          }
+        } else {
+          map[op].totalPecas += 1;
         }
         
-        // Cada linha no controle_nestings é UMA PEÇA
-        map[op].totalPecas += 1;
-        
-        if (log.nesting) {
-          map[op].uniqueNestings.add(log.nesting);
-        }
-        
-        // Peso por peça (se o campo peso_total for o peso da peça individual)
+        if (log.nesting) map[op].uniqueNestings.add(log.nesting);
         map[op].totalPeso += Number(log.peso_total || 0); 
       });
 
@@ -77,7 +85,7 @@ export default function RankingOperadores() {
         totalPecas: item.totalPecas,
         totalPeso: item.totalPeso,
         totalNestings: item.uniqueNestings.size,
-        eficiencia: item.eficiencia
+        eficiencia: 0
       })).sort((a, b) => b.totalPecas - a.totalPecas);
       
       setStats(result);

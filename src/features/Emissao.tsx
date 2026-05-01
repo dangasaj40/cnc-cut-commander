@@ -22,108 +22,141 @@ interface NestingGroup {
   pecas: string[];
   esps: string[];
   tempo: number;
-  peso: number; // Novo campo
+  peso: number;
   blocos: string[];
   painels: string[];
+  detalhes: string[]; // Dimensões/Descrições
   count: number;
 }
 
 const generatePDF = (idEmissao: string, balsa: any, config: any, selectedData: NestingGroup[]) => {
   const doc = new jsPDF('l', 'mm', 'a4'); 
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 10;
 
-  // Logo (Canto Superior Direito)
+  // 1. Barra de Título Superior
+  doc.setFillColor(31, 58, 102); 
+  doc.rect(margin, margin, pageWidth - 80, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  // Centralização Vertical Fina: 8mm de altura / 2 = 4mm. margin + 4mm + offset de ajuste
+  doc.text("LISTA DIARIA DE NESTINGS - PREENCHIMENTO MANUAL", (pageWidth - 80) / 2 + 10, margin + 5, { align: 'center' });
+
+  // 2. Logo (Canto Superior Direito)
   try {
-    doc.addImage("/logo.jpg", "JPEG", pageWidth - 60, 12, 50, 20);
+    doc.addImage("/logo.jpg", "JPEG", pageWidth - 60, margin, 50, 20);
   } catch(e) {}
 
-  // Cabeçalho Principal (Azul Escuro)
-  doc.setFillColor(31, 58, 102); 
-  doc.rect(10, 10, pageWidth - 80, 10, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-  doc.text("LISTA DIARIA DE NESTINGS - PREENCHIMENTO MANUAL", (pageWidth - 80) / 2 + 10, 17, { align: 'center' });
-
-  // Quadros de Informação
+  // 3. Grid de Informações Esquerda
   doc.setTextColor(0, 0, 0);
-  doc.setFontSize(9);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "bold");
+
+  const drawField = (x: number, y: number, w: number, h: number, label: string, value: string, labelW: number = 30) => {
+    // Label Box (Dark Blue)
+    doc.setFillColor(31, 58, 102);
+    doc.rect(x, y, labelW, h, 'F');
+    doc.setTextColor(255, 255, 255);
+    // Ajuste de centralização vertical para h=5mm
+    doc.text(label, x + 2, y + 3.2); 
+    
+    // Value Box (White)
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(100, 100, 100);
+    doc.rect(x + labelW, y, w - labelW, h);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(value || ""), x + labelW + 2, y + 3.2);
+    doc.setFont("helvetica", "bold");
+  };
+
+  let currentY = 22;
+  drawField(margin, currentY, 80, 5, "ID_EMISSAO", idEmissao);
+  currentY += 5;
+  drawField(margin, currentY, 50, 5, "ID_BALSA", balsa.id_balsa);
+  currentY += 5;
+  drawField(margin, currentY, 50, 5, "TIPO_BALSA", balsa.tipo_balsa);
+  currentY += 5;
+  drawField(margin, currentY, 50, 5, "NOME_BALSA", balsa.nome_balsa);
+
+  // 4. Grid de Informações Meio
+  currentY = 22;
+  drawField(margin + 90, currentY, 60, 5, "MAQUINA", config.maquina);
+  currentY += 5;
+  drawField(margin + 90, currentY, 60, 5, "TURNO", config.turno);
   
-  // Linha 1
-  doc.setFillColor(31, 58, 102); doc.rect(10, 25, 30, 7, 'F');
-  doc.setTextColor(255, 255, 255); doc.text("ID_EMISSAO", 12, 30);
-  doc.setTextColor(0, 0, 0); doc.rect(40, 25, 60, 7); doc.text(idEmissao, 42, 30);
+  // Texto pequeno "Todos os nestings..."
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "normal");
+  doc.text("Todos os nestings nao processados", margin + 90, currentY + 9);
+  
+  currentY += 10;
+  drawField(margin + 90, currentY, 60, 5, "DATA_EMISSAO", format(new Date(), "dd/MM/yyyy"));
+  
+  // Tempo Total dos Nestings
+  currentY += 5;
+  const totalSeconds = selectedData.reduce((acc, n) => acc + (n.tempo * 86400), 0);
+  const totalFormatted = format(new Date(0, 0, 0, 0, 0, totalSeconds), "H:mm");
+  doc.setFillColor(31, 58, 102);
+  doc.rect(margin + 90, currentY, 50, 5, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "bold");
+  doc.text("TEMPO TOTAL DOS NESTINGS", margin + 92, currentY + 3.2);
+  doc.setTextColor(0, 0, 0);
+  doc.rect(margin + 140, currentY, 10, 5);
+  doc.setFont("helvetica", "normal");
+  doc.text(totalFormatted, margin + 141, currentY + 3.2);
 
-  doc.setFillColor(31, 58, 102); doc.rect(110, 25, 30, 7, 'F');
-  doc.setTextColor(255, 255, 255); doc.text("MAQUINA", 112, 30);
-  doc.setTextColor(0, 0, 0); doc.rect(140, 25, 40, 7); doc.text(config.maquina, 142, 30);
+  // 5. Campo Operador (Direita)
+  drawField(pageWidth - 90, 42, 80, 5, "OPERADOR", "", 25);
 
-  // Linha 2
-  doc.setFillColor(31, 58, 102); doc.rect(10, 32, 30, 7, 'F');
-  doc.setTextColor(255, 255, 255); doc.text("ID_BALSA", 12, 37);
-  doc.setTextColor(0, 0, 0); doc.rect(40, 32, 60, 7); doc.text(balsa.id_balsa, 42, 37);
-
-  doc.setFillColor(31, 58, 102); doc.rect(110, 32, 30, 7, 'F');
-  doc.setTextColor(255, 255, 255); doc.text("TURNO", 112, 37);
-  doc.setTextColor(0, 0, 0); doc.rect(140, 32, 40, 7); doc.text(config.turno, 142, 37);
-
-  // Linha 3
-  doc.setFillColor(31, 58, 102); doc.rect(10, 39, 30, 7, 'F');
-  doc.setTextColor(255, 255, 255); doc.text("TIPO_BALSA", 12, 44);
-  doc.setTextColor(0, 0, 0); doc.rect(40, 39, 60, 7); doc.text(balsa.tipo_balsa, 42, 44);
-
-  doc.setFillColor(31, 58, 102); doc.rect(110, 46, 30, 7, 'F');
-  doc.setTextColor(255, 255, 255); doc.text("DATA_EMISSAO", 112, 51);
-  doc.setTextColor(0, 0, 0); doc.rect(140, 46, 40, 7); doc.text(format(new Date(config.data), "dd/MM/yyyy"), 142, 51);
-
-  // Linha 4
-  doc.setFillColor(31, 58, 102); doc.rect(10, 46, 30, 7, 'F');
-  doc.setTextColor(255, 255, 255); doc.text("NOME_BALSA", 12, 51);
-  doc.setTextColor(0, 0, 0); doc.rect(40, 46, 60, 7); doc.text(balsa.nome_balsa, 42, 51);
-
-  doc.setFillColor(31, 58, 102); doc.rect(190, 46, 30, 7, 'F');
-  doc.setTextColor(255, 255, 255); doc.text("OPERADOR", 192, 51);
-  doc.setTextColor(0, 0, 0); doc.rect(220, 46, 67, 7); // Espaço em branco para assinatura
-
-  // Tabela de Nestings
+  // 6. Tabela de Nestings
   const tableData = selectedData.map((n, i) => [
     i + 1,
     n.nesting,
-    format(new Date(0, 0, 0, 0, 0, n.tempo * 86400), "HH:mm"),
+    format(new Date(0, 0, 0, 0, 0, n.tempo * 86400), "H:mm"),
     n.esps.join(", "),
     n.blocos.join(", "),
     n.painels.join(", "),
     "", // Carreira Chapa (Manual)
     "", // Hora Início (Manual)
     "", // Hora Fim (Manual)
-    ""  // Parada (Manual)
+    ""  // Parada / Observações
   ]);
 
   autoTable(doc, {
-    startY: 60,
-    head: [["Seq.", "Nesting", "Tempo", "Esp. (mm)", "Bloco", "Painel", "Carreira", "Início", "Fim", "Observações"]],
+    startY: 52,
+    head: [["Seq.", "Nesting", "Tempo de corte", "Esp. (mm)", "Bloco", "Painel", "Carreira Chapa", "Hora início", "Hora fim", "Parada / Observações"]],
     body: tableData,
     theme: 'grid',
     headStyles: {
       fillColor: [31, 58, 102],
       textColor: [255, 255, 255],
       fontSize: 8,
-      halign: 'center'
+      fontStyle: 'bold',
+      halign: 'center',
+      lineWidth: 0.1,
+      lineColor: [255, 255, 255]
     },
     styles: {
-      fontSize: 7,
+      fontSize: 8,
       cellPadding: 2,
-      valign: 'middle'
+      valign: 'middle',
+      textColor: [0, 0, 0],
+      lineWidth: 0.1,
+      lineColor: [150, 150, 150]
     },
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },
-      1: { fontStyle: 'bold', cellWidth: 20 },
-      2: { halign: 'center', cellWidth: 15 },
-      3: { halign: 'center', cellWidth: 15 },
+      1: { halign: 'center', cellWidth: 25 },
+      2: { halign: 'center', cellWidth: 25 },
+      3: { halign: 'center', cellWidth: 20 },
       6: { cellWidth: 25 },
-      7: { cellWidth: 15 },
-      8: { cellWidth: 15 },
-      9: { cellWidth: 40 }
+      7: { cellWidth: 20 },
+      8: { cellWidth: 20 },
+      9: { cellWidth: 45 }
     }
   });
 
@@ -181,12 +214,13 @@ export default function EmissaoPage() {
 
     setLoading(true);
     
-    // 1. Buscar os dados brutos de TUDO que está disponível para esta balsa
+    // 1. Buscar TUDO o que NÃO foi finalizado nem está em processo
     const { data: allAvailable, error: fetchErr } = await supabase
       .from("controle_nestings")
       .select("nesting, bloco, painel, peca, espessura_mm, tempo_corte_total, peso_total, descricao, status_processo")
       .eq("id_balsa", selectedBalsa)
-      .eq("status_processo", "Disponivel");
+      .neq("status_processo", "Finalizado")
+      .neq("status_processo", "Em processamento");
 
     if (fetchErr) {
       console.error("Erro ao buscar nestings:", fetchErr);
@@ -229,6 +263,7 @@ export default function EmissaoPage() {
             peso: 0,
             blocos: [],
             painels: [],
+            detalhes: [],
             count: 0
           };
         }
@@ -237,6 +272,7 @@ export default function EmissaoPage() {
         if (!groups[item.nesting].esps.includes(String(item.espessura_mm))) groups[item.nesting].esps.push(String(item.espessura_mm));
         if (!groups[item.nesting].blocos.includes(item.bloco)) groups[item.nesting].blocos.push(item.bloco);
         if (!groups[item.nesting].painels.includes(item.painel)) groups[item.nesting].painels.push(item.painel);
+        if (item.descricao && !groups[item.nesting].detalhes.includes(item.descricao)) groups[item.nesting].detalhes.push(item.descricao);
         groups[item.nesting].count++;
       });
 
@@ -289,14 +325,27 @@ export default function EmissaoPage() {
     setIsEmitting(true);
     try {
       const balsa = balsas.find(b => b.id_balsa === selectedBalsa);
-      const timestamp = format(new Date(), "ddMMHHmm");
-      const idEmissao = `${timestamp}-${config.maquina}-${config.turno}-${selectedBalsa}`;
+      
+      // Lógica de ID de Emissão Fiel à Planilha (MMDD-MAQ-TURNO-BALSA-SEQ)
+      const datePart = format(new Date(), "MMdd");
+      const prefix = `${datePart}-${config.maquina}-${config.turno}-${selectedBalsa}`;
+      
+      // Buscar a próxima sequência para este prefixo
+      const { data: existing } = await supabase
+        .from("emissoes")
+        .select("id_emissao")
+        .like("id_emissao", `${prefix}%`);
+      
+      const uniqueIds = new Set(existing?.map(e => e.id_emissao));
+      const sequence = (uniqueIds.size + 1).toString().padStart(3, '0');
+      const idEmissao = `${prefix}-${sequence}`;
 
       const selectedData = nestings.filter(n => selectedNestings.has(n.nesting));
 
-      // 1. Gravar no Histórico de EMISSOES
+      // 1. Gravar no Histórico de EMISSOES (Todos os 16 campos da planilha)
       const emissoesToInsert = selectedData.map(n => ({
         id_emissao: idEmissao,
+        data_emissao: new Date().toISOString(),
         id_balsa: selectedBalsa,
         tipo_balsa: balsa.tipo_balsa,
         nome_balsa: balsa.nome_balsa,
@@ -307,12 +356,16 @@ export default function EmissaoPage() {
         nesting: n.nesting,
         pecas: n.pecas.join(", "),
         qtd_pecas: n.count,
+        descricao: n.detalhes.join(" | "),
         espessura: n.esps.join(", "),
         status_processo: "Em processamento",
-        chave_emissao: `${idEmissao}|${n.nesting}`
+        chave_emissao: `${selectedBalsa}|${n.nesting}`
       }));
 
-      const { error: emError } = await supabase.from("emissoes").insert(emissoesToInsert);
+      const { error: emError } = await supabase
+        .from("emissoes")
+        .upsert(emissoesToInsert, { onConflict: 'chave_emissao' });
+      
       if (emError) throw emError;
 
       // 2. Atualizar CONTROLE_NESTINGS

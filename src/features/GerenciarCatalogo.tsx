@@ -111,7 +111,19 @@ export default function GerenciarCatalogo() {
       reader.onload = (evt) => {
         const wb = XLSX.read(evt.target?.result, { type: "binary" });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        setImportText(XLSX.utils.sheet_to_csv(ws));
+        const data = XLSX.utils.sheet_to_json(ws);
+        
+        // Se o Excel tiver as colunas que conhecemos (G5), formata o CSV direto sem IA
+        if (data.length > 0 && (data[0] as any).PECA) {
+          const csvOutput = data.map((item: any) => 
+            `${item.NESTING || ""};${item.PECA || ""};;${item.TIPO_BALSA || ""};${item.QTD || 1};${String(item.PESO_KG || 0).replace(".", ",")};${item.DIMENSIONAL || ""};${item.ESPESSURA_MM || ""}`
+          ).join("\n");
+          setImportText(csvOutput);
+          alert(`Leitura direta concluída: ${data.length} peças encontradas.`);
+        } else {
+          // Se for um formato desconhecido, mantém o CSV original para a IA analisar
+          setImportText(XLSX.utils.sheet_to_csv(ws));
+        }
         setPendingFile(null);
       };
       reader.readAsBinaryString(file);
@@ -248,36 +260,39 @@ export default function GerenciarCatalogo() {
           espessura_mm: esp || ""
         };
       });
-      // Lógica de Versão e Sobrescrita
+
       const uniqueNestings = Array.from(new Set(payload.map(p => p.nesting)));
       const now = new Date().toISOString();
       
-      for (const nestingId of uniqueNestings) {
-        // Buscar versão atual
-        const { data: existing } = await supabase
-          .from("catalogo_pecas")
-          .select("versao")
-          .eq("nesting", nestingId)
-          .limit(1);
-        
-        const nextVersion = existing && existing.length > 0 ? (existing[0].versao || 1) + 1 : 1;
-        
-        // Apagar antigos
-        await supabase.from("catalogo_pecas").delete().eq("nesting", nestingId);
-        
-        // Atualizar payload para este nesting com a nova versão e data
-        payload.forEach(item => {
-          if (item.nesting === nestingId) {
-            (item as any).versao = nextVersion;
-            (item as any).data_importacao = now;
-          }
-        });
+      // Otimização: Pegar versões atuais em massa
+      const { data: existingVersions } = await supabase
+        .from("catalogo_pecas")
+        .select("nesting, versao")
+        .in("nesting", uniqueNestings);
+
+      const versionMap: Record<string, number> = {};
+      (existingVersions || []).forEach(v => {
+        versionMap[v.nesting] = Math.max(versionMap[v.nesting] || 0, v.versao || 1);
+      });
+
+      // Deletar os nestings que serão sobrescritos em um único comando
+      await supabase.from("catalogo_pecas").delete().in("nesting", uniqueNestings);
+      
+      // Preparar payload final com versões atualizadas
+      const finalPayload = payload.map(item => ({
+        ...item,
+        versao: (versionMap[item.nesting] || 0) + 1,
+        data_importacao: now
+      }));
+
+      // Inserir em blocos de 200 para alta performance
+      for (let i = 0; i < finalPayload.length; i += 200) {
+        const chunk = finalPayload.slice(i, i + 200);
+        const { error } = await supabase.from("catalogo_pecas").insert(chunk);
+        if (error) throw error;
       }
 
-      const { error } = await supabase.from("catalogo_pecas").insert(payload);
-      if (error) throw error;
-
-      alert(`Sucesso! ${payload.length} itens importados e nestings antigos sobrescritos.`);
+      alert(`Sucesso! ${finalPayload.length} itens importados e nestings antigos sobrescritos.`);
       setImportText(""); setShowImport(false); loadData();
     } catch (e: any) {
       alert("Erro ao salvar: " + e.message);

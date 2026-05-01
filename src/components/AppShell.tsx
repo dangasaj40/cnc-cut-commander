@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,24 +16,32 @@ import {
   Package,
   AlertTriangle,
   Trophy,
-  ScrollText
+  ScrollText,
+  MoreHorizontal,
+  X
 } from "lucide-react";
 
-const NAV = [
+const NAV_PRIMARY = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "supervisor", "viewer"] },
   { to: "/balsas", label: "Balsas", icon: Package, roles: ["admin", "supervisor"] },
   { to: "/emissao", label: "Emissão", icon: PlusCircle, roles: ["admin", "supervisor"] },
-  { to: "/retorno", label: "Baixa de Produção", icon: History, roles: ["admin", "supervisor", "viewer"] },
+  { to: "/retorno", label: "Baixa", icon: History, roles: ["admin", "supervisor", "viewer"] },
   { to: "/paradas", label: "Paradas", icon: AlertTriangle, roles: ["admin", "supervisor", "viewer"] },
+] as const;
+
+const NAV_SECONDARY = [
   { to: "/operadores", label: "Operadores", icon: Trophy, roles: ["admin", "supervisor", "viewer"] },
   { to: "/historico", label: "Histórico", icon: ScrollText, roles: ["admin", "supervisor", "viewer"] },
   { to: "/catalogo", label: "Nestings", icon: Library, roles: ["admin", "supervisor", "viewer"] },
 ] as const;
 
+const NAV = [...NAV_PRIMARY, ...NAV_SECONDARY] as const;
+
 export function AppShell({ children }: { children?: ReactNode }) {
   const { profile, roles, signOut, isAdmin, loading } = useAuth();
   const router = useRouter();
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Robô de Auto-Preenchimento Silencioso
   useEffect(() => {
@@ -216,45 +224,124 @@ export function AppShell({ children }: { children?: ReactNode }) {
 
       {/* ─── BOTTOM NAV MOBILE ─── */}
       {profile?.ativo && roles.length > 0 && (
-        <nav
-          style={{ background: "#1E293B", borderTop: "1px solid #334155" }}
-          className="fixed bottom-0 left-0 right-0 z-50 md:hidden px-2 pb-safe shadow-[0_-4px_10px_rgba(0,0,0,0.15)]"
-        >
-          <div className="flex items-center justify-around py-2">
-            {NAV.filter(n => n.roles.some(r => roles.includes(r as any))).map((n) => {
-              const active = path === n.to || (n.to !== "/" && path.startsWith(n.to));
-              const Icon = n.icon;
-              return (
-                <Link
-                  key={n.to}
-                  to={n.to}
-                  className="flex flex-col items-center gap-1 min-w-[52px] py-1.5 transition-all"
-                  style={{ color: active ? "#A3E635" : "#94A3B8" }}
+        <>
+          {/* ─── DRAWER OVERLAY ─── */}
+          {drawerOpen && (
+            <div
+              className="fixed inset-0 z-40 md:hidden"
+              style={{ background: "rgba(0,0,0,0.5)" }}
+              onClick={() => setDrawerOpen(false)}
+            />
+          )}
+
+          {/* ─── DRAWER PANEL ─── */}
+          <div
+            className="fixed bottom-16 left-0 right-0 z-50 md:hidden transition-all duration-300"
+            style={{
+              transform: drawerOpen ? "translateY(0)" : "translateY(110%)",
+              background: "#1E293B",
+              borderTop: "1px solid #334155",
+              borderRadius: "20px 20px 0 0",
+              boxShadow: "0 -8px 32px rgba(0,0,0,0.4)"
+            }}
+          >
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div style={{ background: "#475569", width: 36, height: 4, borderRadius: 999 }} />
+            </div>
+
+            <div className="px-4 pb-6 pt-2">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Mais opções</span>
+                <button onClick={() => setDrawerOpen(false)} className="text-slate-500 hover:text-white transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                {NAV_SECONDARY.filter(n => n.roles.some(r => roles.includes(r as any))).map((n) => {
+                  const active = path === n.to || (n.to !== "/" && path.startsWith(n.to));
+                  const Icon = n.icon;
+                  return (
+                    <Link
+                      key={n.to}
+                      to={n.to}
+                      onClick={() => setDrawerOpen(false)}
+                      className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all"
+                      style={{
+                        background: active ? "rgba(163,230,53,0.12)" : "rgba(255,255,255,0.04)",
+                        color: active ? "#A3E635" : "#94A3B8",
+                        border: active ? "1px solid rgba(163,230,53,0.25)" : "1px solid rgba(255,255,255,0.06)"
+                      }}
+                    >
+                      <Icon size={22} strokeWidth={active ? 2.5 : 2} />
+                      <span className="text-[11px] font-semibold">{n.label}</span>
+                    </Link>
+                  );
+                })}
+
+                {isAdmin && (
+                  <Link
+                    to="/configuracoes"
+                    onClick={() => setDrawerOpen(false)}
+                    className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all"
+                    style={{
+                      background: path.startsWith("/configuracoes") ? "rgba(163,230,53,0.12)" : "rgba(255,255,255,0.04)",
+                      color: path.startsWith("/configuracoes") ? "#A3E635" : "#94A3B8",
+                      border: path.startsWith("/configuracoes") ? "1px solid rgba(163,230,53,0.25)" : "1px solid rgba(255,255,255,0.06)"
+                    }}
+                  >
+                    <Settings size={22} strokeWidth={2} />
+                    <span className="text-[11px] font-semibold">Ajustes</span>
+                  </Link>
+                )}
+
+                <button
+                  onClick={async () => { setDrawerOpen(false); await signOut(); router.navigate({ to: "/login" }); }}
+                  className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all"
+                  style={{ background: "rgba(255,255,255,0.04)", color: "#94A3B8", border: "1px solid rgba(255,255,255,0.06)" }}
                 >
-                  <Icon size={20} strokeWidth={active ? 2.5 : 2} className={active ? "text-[#A3E635]" : ""} />
-                  <span className="text-[9px] font-semibold tracking-tight">{n.label}</span>
-                </Link>
-              );
-            })}
-            {isAdmin && (
-              <Link
-                to="/configuracoes"
-                className="flex flex-col items-center gap-1 min-w-[52px] py-1.5 transition-all"
-                style={{ color: path.startsWith("/configuracoes") ? "#A3E635" : "#94A3B8" }}
-              >
-                <Settings size={20} strokeWidth={path.startsWith("/configuracoes") ? 2.5 : 2} className={path.startsWith("/configuracoes") ? "text-[#A3E635]" : ""} />
-                <span className="text-[9px] font-semibold tracking-tight">Ajustes</span>
-              </Link>
-            )}
-            <button
-              onClick={async () => { await signOut(); router.navigate({ to: "/login" }); }}
-              className="flex flex-col items-center gap-1 min-w-[52px] py-1.5 transition-all text-[#94A3B8] hover:text-red-400"
-            >
-              <LogOut size={20} strokeWidth={2} />
-              <span className="text-[9px] font-semibold tracking-tight">Sair</span>
-            </button>
+                  <LogOut size={22} strokeWidth={2} />
+                  <span className="text-[11px] font-semibold">Sair</span>
+                </button>
+              </div>
+            </div>
           </div>
-        </nav>
+
+          {/* ─── BOTTOM NAV BAR ─── */}
+          <nav
+            style={{ background: "#1E293B", borderTop: "1px solid #334155" }}
+            className="fixed bottom-0 left-0 right-0 z-50 md:hidden px-2 pb-safe shadow-[0_-4px_10px_rgba(0,0,0,0.15)]"
+          >
+            <div className="flex items-center justify-around py-2">
+              {NAV_PRIMARY.filter(n => n.roles.some(r => roles.includes(r as any))).map((n) => {
+                const active = path === n.to || (n.to !== "/" && path.startsWith(n.to));
+                const Icon = n.icon;
+                return (
+                  <Link
+                    key={n.to}
+                    to={n.to}
+                    className="flex flex-col items-center gap-1 min-w-[52px] py-1.5 transition-all"
+                    style={{ color: active ? "#A3E635" : "#94A3B8" }}
+                  >
+                    <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+                    <span className="text-[9px] font-semibold tracking-tight">{n.label}</span>
+                  </Link>
+                );
+              })}
+
+              {/* Botão Mais */}
+              <button
+                onClick={() => setDrawerOpen(o => !o)}
+                className="flex flex-col items-center gap-1 min-w-[52px] py-1.5 transition-all"
+                style={{ color: drawerOpen ? "#A3E635" : "#94A3B8" }}
+              >
+                <MoreHorizontal size={20} strokeWidth={drawerOpen ? 2.5 : 2} />
+                <span className="text-[9px] font-semibold tracking-tight">Mais</span>
+              </button>
+            </div>
+          </nav>
+        </>
       )}
     </div>
   );

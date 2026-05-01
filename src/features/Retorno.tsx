@@ -33,6 +33,9 @@ interface PendingNesting {
 }
 
 export default function RetornoPage() {
+  const [balsas, setBalsas] = useState<any[]>([]);
+  const [selectedBalsa, setSelectedBalsa] = useState("");
+  const [allPendingEmissions, setAllPendingEmissions] = useState<any[]>([]);
   const [pendingEmissions, setPendingEmissions] = useState<string[]>([]);
   const [selectedEmission, setSelectedEmission] = useState("");
   const [emissionInfo, setEmissionInfo] = useState<any>(null);
@@ -43,6 +46,7 @@ export default function RetornoPage() {
   
   const [loading, setLoading] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [balsaStats, setBalsaStats] = useState({ total: 0, concluidos: 0, pendentes: 0 });
 
   // Form states globais para o operador
   const [form, setForm] = useState({
@@ -64,19 +68,57 @@ export default function RetornoPage() {
   }, [selectedEmission]);
 
   const fetchInitialData = async () => {
+    // 1. Buscar todas as emissões pendentes com suas balsas
     const { data: emData } = await supabase
       .from("emissoes")
-      .select("id_emissao")
+      .select("id_emissao, id_balsa")
       .eq("status_processo", "Em processamento");
     
-    const uniqueIds = Array.from(new Set(emData?.map(e => e.id_emissao) || []));
-    setPendingEmissions(uniqueIds);
+    if (emData) {
+      setAllPendingEmissions(emData);
+      const uniqueBalsas = Array.from(new Set(emData.map(e => e.id_balsa)));
+      setBalsas(uniqueBalsas);
+    }
 
+    // 2. Buscar configurações de sistema
     const { data: sData } = await supabase.from("system_settings").select("key, value");
     if (sData) {
       sData.forEach(item => {
         if (item.key === "operadores") setOperadores(JSON.parse(item.value));
         if (item.key === "motivos_parada") setMotivosParada(JSON.parse(item.value));
+      });
+    }
+  };
+
+  // Efeito para filtrar emissões quando a balsa mudar
+  useEffect(() => {
+    if (selectedBalsa) {
+      const filtered = allPendingEmissions
+        .filter(e => e.id_balsa === selectedBalsa)
+        .map(e => e.id_emissao);
+      setPendingEmissions(Array.from(new Set(filtered)));
+      fetchBalsaStats(selectedBalsa);
+    } else {
+      const allIds = Array.from(new Set(allPendingEmissions.map(e => e.id_emissao)));
+      setPendingEmissions(allIds);
+      setBalsaStats({ total: 0, concluidos: 0, pendentes: 0 });
+    }
+    setSelectedEmission("");
+  }, [selectedBalsa, allPendingEmissions]);
+
+  const fetchBalsaStats = async (balsaId: string) => {
+    const { data } = await supabase
+      .from("controle_nestings")
+      .select("status_processo")
+      .eq("id_balsa", balsaId);
+    
+    if (data) {
+      const total = data.length;
+      const concluidos = data.filter(d => d.status_processo === "Finalizado").length;
+      setBalsaStats({
+        total,
+        concluidos,
+        pendentes: total - concluidos
       });
     }
   };
@@ -303,18 +345,48 @@ export default function RetornoPage() {
         {/* Painel Lateral */}
         <div className="lg:col-span-1 space-y-6">
            <div className="glass-card p-6 space-y-4">
-              <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
-                 <Activity size={14} /> Seleção de Ordem
+               <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                 <Activity size={14} /> Filtragem de Balsa
               </h3>
-              
+
               <label className="flex flex-col gap-1.5">
-                 <span className="text-[10px] font-bold uppercase text-muted-foreground">ID Emissão Pendente</span>
+                 <span className="text-[10px] font-bold uppercase text-muted-foreground">Selecionar Balsa</span>
+                 <select 
+                   className="field border-primary/20 bg-primary/5 text-primary font-black"
+                   value={selectedBalsa}
+                   onChange={e => setSelectedBalsa(e.target.value)}
+                 >
+                   <option value="">Todas as Balsas</option>
+                   {balsas.map(id => <option key={id} value={id}>{id}</option>)}
+                 </select>
+              </label>
+
+              {selectedBalsa && (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] font-black text-slate-400 uppercase">Progresso Balsa</span>
+                    <span className="text-[10px] font-black text-slate-800">{balsaStats.concluidos} / {balsaStats.total}</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-emerald-500 transition-all duration-500" 
+                      style={{ width: `${(balsaStats.concluidos / (balsaStats.total || 1)) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-[9px] font-bold text-slate-400 text-center uppercase">Faltam {balsaStats.pendentes} nestings</p>
+                </div>
+              )}
+
+              <div className="h-px bg-slate-100 my-2" />
+
+              <label className="flex flex-col gap-1.5">
+                 <span className="text-[10px] font-bold uppercase text-muted-foreground">ID Emissão Específica</span>
                  <select 
                    className="field"
                    value={selectedEmission}
                    onChange={e => setSelectedEmission(e.target.value)}
                  >
-                   <option value="">Selecione...</option>
+                   <option value="">Selecione a Ordem...</option>
                    {pendingEmissions.map(id => <option key={id} value={id}>{id}</option>)}
                  </select>
               </label>
