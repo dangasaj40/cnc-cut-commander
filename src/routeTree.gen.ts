@@ -17,6 +17,7 @@ import { Route as OperadoresRouteImport } from './routes/operadores'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HistoricoRouteImport } from './routes/historico'
 import { Route as EmissaoRouteImport } from './routes/emissao'
+import { Route as DobraRouteImport } from './routes/dobra'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as CatalogoRouteImport } from './routes/catalogo'
 import { Route as BalsasRouteImport } from './routes/balsas'
@@ -62,6 +63,11 @@ const EmissaoRoute = EmissaoRouteImport.update({
   path: '/emissao',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DobraRoute = DobraRouteImport.update({
+  id: '/dobra',
+  path: '/dobra',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
   id: '/configuracoes',
   path: '/configuracoes',
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/balsas': typeof BalsasRoute
   '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/dobra': typeof DobraRoute
   '/emissao': typeof EmissaoRoute
   '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/balsas': typeof BalsasRoute
   '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/dobra': typeof DobraRoute
   '/emissao': typeof EmissaoRoute
   '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/balsas': typeof BalsasRoute
   '/catalogo': typeof CatalogoRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/dobra': typeof DobraRoute
   '/emissao': typeof EmissaoRoute
   '/historico': typeof HistoricoRoute
   '/login': typeof LoginRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/balsas'
     | '/catalogo'
     | '/configuracoes'
+    | '/dobra'
     | '/emissao'
     | '/historico'
     | '/login'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/balsas'
     | '/catalogo'
     | '/configuracoes'
+    | '/dobra'
     | '/emissao'
     | '/historico'
     | '/login'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/balsas'
     | '/catalogo'
     | '/configuracoes'
+    | '/dobra'
     | '/emissao'
     | '/historico'
     | '/login'
@@ -176,6 +188,7 @@ export interface RootRouteChildren {
   BalsasRoute: typeof BalsasRoute
   CatalogoRoute: typeof CatalogoRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
+  DobraRoute: typeof DobraRoute
   EmissaoRoute: typeof EmissaoRoute
   HistoricoRoute: typeof HistoricoRoute
   LoginRoute: typeof LoginRoute
@@ -244,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EmissaoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dobra': {
+      id: '/dobra'
+      path: '/dobra'
+      fullPath: '/dobra'
+      preLoaderRoute: typeof DobraRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/configuracoes': {
       id: '/configuracoes'
       path: '/configuracoes'
@@ -280,6 +300,7 @@ const rootRouteChildren: RootRouteChildren = {
   BalsasRoute: BalsasRoute,
   CatalogoRoute: CatalogoRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
+  DobraRoute: DobraRoute,
   EmissaoRoute: EmissaoRoute,
   HistoricoRoute: HistoricoRoute,
   LoginRoute: LoginRoute,

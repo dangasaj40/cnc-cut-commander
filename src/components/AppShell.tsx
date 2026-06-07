@@ -18,7 +18,8 @@ import {
   Trophy,
   ScrollText,
   MoreHorizontal,
-  X
+  X,
+  Hammer
 } from "lucide-react";
 
 const NAV_PRIMARY = [
@@ -27,6 +28,7 @@ const NAV_PRIMARY = [
   { to: "/emissao", label: "Emissão", icon: PlusCircle, roles: ["admin", "supervisor"] },
   { to: "/retorno", label: "Baixa", icon: History, roles: ["admin", "supervisor", "viewer"] },
   { to: "/paradas", label: "Paradas", icon: AlertTriangle, roles: ["admin", "supervisor", "viewer"] },
+  { to: "/dobra", label: "Dobra", icon: Hammer, roles: ["admin", "supervisor", "viewer"] },
 ] as const;
 
 const NAV_SECONDARY = [

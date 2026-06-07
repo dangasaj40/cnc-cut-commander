@@ -1,27 +1,64 @@
-import { createFileRoute, Navigate, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { ShieldCheck, AlertCircle, Cpu, ArrowRight } from "lucide-react";
+import { ShieldCheck, AlertCircle, Cpu, ArrowRight, Mail, Lock, User, CheckCircle } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
 function LoginPage() {
-  const { user, signInWithGoogle, loading } = useAuth();
+  const { user, signIn, signUp, loading } = useAuth();
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [nome, setNome] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (!loading && user) return <Navigate to="/" />;
 
-  const handleGoogleLogin = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setBusy(true);
     setError(null);
-    const res = await signInWithGoogle();
-    if (res?.error) {
-      setError("Falha na autenticação. Verifique seu acesso corporativo.");
+    setSuccess(null);
+
+    try {
+      if (isSignUp) {
+        if (!nome.trim()) {
+          setError("O nome é obrigatório.");
+          setBusy(false);
+          return;
+        }
+        const res = await signUp(email, password, nome);
+        if (res?.error) {
+          setError(res.error);
+        } else {
+          setSuccess("Solicitação de cadastro enviada com sucesso! Aguarde a aprovação do administrador.");
+          setEmail("");
+          setPassword("");
+          setNome("");
+          setIsSignUp(false);
+        }
+      } else {
+        const res = await signIn(email, password);
+        if (res?.error) {
+          if (res.error.includes("Invalid login credentials")) {
+            setError("E-mail ou senha incorretos.");
+          } else if (res.error.includes("Email not confirmed")) {
+            setError("E-mail ainda não confirmado. Verifique sua caixa de entrada.");
+          } else {
+            setError(res.error);
+          }
+        }
+      }
+    } catch (err: any) {
+      setError(err?.message || "Ocorreu um erro ao processar sua solicitação.");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   return (
@@ -79,28 +116,73 @@ function LoginPage() {
             </div>
 
             <div className="mb-10">
-              <h2 className="text-3xl font-black text-slate-900 mb-2">Bem-vindo</h2>
-              <p className="text-sm text-slate-500 font-medium">Acesse sua conta para gerenciar a produção.</p>
+              <h2 className="text-3xl font-black text-slate-900 mb-2">
+                {isSignUp ? "Criar Conta" : "Bem-vindo"}
+              </h2>
+              <p className="text-sm text-slate-500 font-medium">
+                {isSignUp ? "Solicite acesso ao sistema informando seus dados." : "Acesse sua conta para gerenciar a produção."}
+              </p>
             </div>
 
-            <div className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {isSignUp && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Nome Completo</label>
+                  <div className="relative">
+                    <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Seu nome"
+                      value={nome}
+                      onChange={(e) => setNome(e.target.value)}
+                      required={isSignUp}
+                      className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold focus:outline-none focus:border-primary/50 transition-colors"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">E-mail</label>
+                <div className="relative">
+                  <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="email"
+                    placeholder="exemplo@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Senha</label>
+                <div className="relative">
+                  <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="password"
+                    placeholder="Sua senha"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                </div>
+              </div>
+
               <button
-                onClick={handleGoogleLogin}
+                type="submit"
                 disabled={busy}
-                className="w-full group flex items-center justify-center gap-4 bg-white border-2 border-slate-100 p-4 rounded-2xl text-slate-700 font-bold text-sm shadow-sm hover:shadow-xl hover:border-primary/20 transition-all active:scale-[0.98] disabled:opacity-50"
+                className="w-full mt-2 group flex items-center justify-center gap-4 bg-primary text-white p-4 rounded-2xl font-bold text-sm shadow-md hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
               >
                 {busy ? (
-                  <div className="size-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  <div className="size-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <svg viewBox="0 0 24 24" className="size-5 shrink-0">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                  </svg>
+                  <span>{isSignUp ? "Solicitar Acesso" : "Entrar"}</span>
                 )}
-                <span className="flex-1 text-left">{busy ? "Verificando..." : "Entrar com Google"}</span>
-                <ArrowRight size={18} className="text-slate-300 group-hover:text-primary transition-colors" />
+                {!busy && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
               </button>
 
               {error && (
@@ -109,7 +191,28 @@ function LoginPage() {
                   <p className="text-xs text-red-600 font-bold leading-relaxed">{error}</p>
                 </div>
               )}
-            </div>
+
+              {success && (
+                <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-start gap-3">
+                  <CheckCircle size={18} className="text-emerald-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-emerald-600 font-bold leading-relaxed">{success}</p>
+                </div>
+              )}
+
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(!isSignUp);
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                  className="text-xs font-bold text-primary hover:underline cursor-pointer"
+                >
+                  {isSignUp ? "Já possui uma conta? Faça login" : "Não tem uma conta? Solicite acesso"}
+                </button>
+              </div>
+            </form>
 
             <div className="mt-12 pt-8 border-t border-slate-50 flex flex-col items-center gap-4">
                <div className="flex items-center gap-2 text-[#94A3B8]">

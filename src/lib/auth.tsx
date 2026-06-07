@@ -20,7 +20,6 @@ interface AuthCtx {
   isSupervisor: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, nome: string) => Promise<{ error: string | null }>;
-  signInWithGoogle: () => Promise<{ error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -99,16 +98,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   };
 
-  const signInWithGoogle: AuthCtx["signInWithGoogle"] = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
-    return { error: error?.message ?? null };
-  };
-
   const resetPassword: AuthCtx["resetPassword"] = async (email) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: typeof window !== "undefined" ? window.location.origin + "/reset-password" : undefined,
@@ -127,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSupervisor = isAdmin || roles.includes("supervisor");
 
   return (
-    <Ctx.Provider value={{ user, session, profile, roles, loading, isAdmin, isSupervisor, signIn, signUp, signInWithGoogle, resetPassword, signOut, refresh }}>
+    <Ctx.Provider value={{ user, session, profile, roles, loading, isAdmin, isSupervisor, signIn, signUp, resetPassword, signOut, refresh }}>
       {children}
     </Ctx.Provider>
   );

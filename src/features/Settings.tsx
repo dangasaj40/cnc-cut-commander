@@ -18,7 +18,12 @@ import {
   X,
   Plus,
   RefreshCw,
-  Zap
+  Zap,
+  Hammer,
+  UserPlus,
+  ToggleLeft,
+  ToggleRight,
+  Trash2
 } from "lucide-react";
 
 function ParameterList({ title, paramKey }: { title: string, paramKey: string }) {
@@ -86,7 +91,188 @@ function ParameterList({ title, paramKey }: { title: string, paramKey: string })
   );
 }
 
-type Tab = "usuarios" | "catalogo" | "sistema" | "notificacoes";
+// ─── Operadores Dobra Panel ───────────────────────────────────────────────────
+interface OpDobra { id: string; nome: string; ativo: boolean; }
+
+function OperadoresDobraPanel() {
+  const [lista, setLista] = useState<OpDobra[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [novoNome, setNovoNome] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [busca, setBusca] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("operadores_dobra")
+      .select("id, nome, ativo")
+      .order("nome");
+    setLista((data ?? []) as OpDobra[]);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const adicionar = async () => {
+    const nome = novoNome.trim().toUpperCase();
+    if (!nome) return;
+    if (lista.some(o => o.nome.toUpperCase() === nome)) {
+      alert("Já existe um operador com esse nome.");
+      return;
+    }
+    setSalvando(true);
+    await supabase.from("operadores_dobra").insert({ nome });
+    setNovoNome("");
+    await load();
+    setSalvando(false);
+  };
+
+  const toggleAtivo = async (op: OpDobra) => {
+    await supabase.from("operadores_dobra").update({ ativo: !op.ativo }).eq("id", op.id);
+    setLista(l => l.map(o => o.id === op.id ? { ...o, ativo: !o.ativo } : o));
+  };
+
+  const excluir = async (op: OpDobra) => {
+    if (!confirm(`Excluir "${op.nome}"? Registros de dobra vinculados não serão apagados.`)) return;
+    await supabase.from("operadores_dobra").delete().eq("id", op.id);
+    setLista(l => l.filter(o => o.id !== op.id));
+  };
+
+  const filtrados = lista.filter(o =>
+    o.nome.toLowerCase().includes(busca.toLowerCase())
+  );
+  const ativos = filtrados.filter(o => o.ativo);
+  const inativos = filtrados.filter(o => !o.ativo);
+
+  return (
+    <div className="space-y-6">
+      {/* Formulário de adição */}
+      <div className="glass-card p-6 space-y-4">
+        <div className="flex items-center gap-3 text-amber-400 border-b border-white/5 pb-4">
+          <UserPlus size={20} />
+          <h3 className="text-sm font-bold uppercase tracking-widest">Adicionar Operador de Dobra</h3>
+        </div>
+        <div className="flex gap-3">
+          <input
+            type="text"
+            className="field flex-1 uppercase"
+            placeholder="Nome do operador (ex: CARLOS)"
+            value={novoNome}
+            onChange={e => setNovoNome(e.target.value.toUpperCase())}
+            onKeyDown={e => e.key === "Enter" && adicionar()}
+          />
+          <button
+            onClick={adicionar}
+            disabled={salvando || !novoNome.trim()}
+            className="btn-primary px-6 flex items-center gap-2 disabled:opacity-50"
+          >
+            {salvando
+              ? <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              : <><Plus size={16} /> Adicionar</>}
+          </button>
+        </div>
+      </div>
+
+      {/* Lista */}
+      <div className="glass-card overflow-hidden">
+        <div className="px-6 py-4 border-b border-white/5 flex items-center gap-4">
+          <Hammer size={16} className="text-amber-400" />
+          <h3 className="text-sm font-bold uppercase tracking-widest flex-1">Operadores Cadastrados</h3>
+          <div className="relative">
+            <input
+              type="text"
+              className="field py-2 pl-8 pr-4 text-xs w-48"
+              placeholder="Buscar..."
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+            />
+            <Users size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          </div>
+          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+            {lista.filter(o => o.ativo).length} ativo{lista.filter(o => o.ativo).length !== 1 ? "s" : ""}
+          </span>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
+            <div className="size-5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+            <span className="text-xs uppercase tracking-widest font-bold">Carregando...</span>
+          </div>
+        ) : filtrados.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
+            <Hammer size={28} className="opacity-20" />
+            <p className="text-xs uppercase tracking-widest font-bold">Nenhum operador encontrado</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {/* Ativos */}
+            {ativos.length > 0 && (
+              <>
+                <div className="px-6 py-2 bg-emerald-500/5">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Ativos</span>
+                </div>
+                {ativos.map(op => (
+                  <div key={op.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] group transition-colors">
+                    <div className="size-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-[10px] font-black text-amber-400">
+                      {op.nome.charAt(0)}
+                    </div>
+                    <span className="text-sm font-bold flex-1">{op.nome}</span>
+                    <button
+                      onClick={() => toggleAtivo(op)}
+                      title="Desativar"
+                      className="text-emerald-400 hover:text-slate-400 transition-colors"
+                    >
+                      <ToggleRight size={22} />
+                    </button>
+                    <button
+                      onClick={() => excluir(op)}
+                      title="Excluir"
+                      className="text-muted-foreground hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+            {/* Inativos */}
+            {inativos.length > 0 && (
+              <>
+                <div className="px-6 py-2 bg-slate-500/5">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Inativos</span>
+                </div>
+                {inativos.map(op => (
+                  <div key={op.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] group transition-colors opacity-50">
+                    <div className="size-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-black text-muted-foreground">
+                      {op.nome.charAt(0)}
+                    </div>
+                    <span className="text-sm font-medium flex-1">{op.nome}</span>
+                    <button
+                      onClick={() => toggleAtivo(op)}
+                      title="Reativar"
+                      className="text-muted-foreground hover:text-emerald-400 transition-colors"
+                    >
+                      <ToggleLeft size={22} />
+                    </button>
+                    <button
+                      onClick={() => excluir(op)}
+                      title="Excluir"
+                      className="text-muted-foreground hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type Tab = "usuarios" | "catalogo" | "sistema" | "notificacoes" | "dobra";
 
 export default function SettingsPage() {
   const { isAdmin, loading, signOut } = useAuth();
@@ -95,7 +281,7 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("tab") as Tab;
-    return ["usuarios", "catalogo", "sistema", "notificacoes"].includes(t) ? t : "usuarios";
+    return ["usuarios", "catalogo", "sistema", "notificacoes", "dobra"].includes(t) ? t : "usuarios";
   });
   
   const [apiKey, setApiKey] = useState("");
@@ -164,13 +350,16 @@ export default function SettingsPage() {
           { id: "catalogo", label: "Nestings", icon: Database },
           { id: "sistema", label: "Sistema", icon: Info },
           { id: "notificacoes", label: "Alertas", icon: Bell },
+          { id: "dobra", label: "Dobra", icon: Hammer },
         ].map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id as Tab)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
               tab === t.id 
-                ? "bg-primary text-black shadow-lg shadow-primary/20" 
+                ? tab === "dobra"
+                  ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20"
+                  : "bg-primary text-black shadow-lg shadow-primary/20"
                 : "text-muted-foreground hover:bg-white/5 hover:text-white"
             }`}
           >
@@ -391,6 +580,22 @@ export default function SettingsPage() {
           <div className="glass-card p-12 text-center text-muted-foreground">
             <Bell size={48} className="mx-auto mb-4 opacity-20" />
             <p className="text-xs uppercase tracking-widest">Configurações de notificações em breve</p>
+          </div>
+        )}
+
+        {tab === "dobra" && (
+          <div className="space-y-6">
+            <div className="bg-amber-500/5 border border-amber-500/20 p-5 rounded-2xl flex gap-4">
+              <Hammer className="text-amber-400 shrink-0" size={24} />
+              <div>
+                <h3 className="text-sm font-bold mb-1">Operadores — Setor de Dobra</h3>
+                <p className="text-[11px] text-muted-foreground uppercase tracking-widest leading-relaxed">
+                  Cadastre e gerencie os operadores exclusivos do setor de dobra de chapas.
+                  Estes operadores são independentes dos operadores de máquina CNC.
+                </p>
+              </div>
+            </div>
+            <OperadoresDobraPanel />
           </div>
         )}
       </div>
