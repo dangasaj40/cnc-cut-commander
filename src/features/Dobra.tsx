@@ -66,6 +66,7 @@ export default function DobraPage() {
   const [selectedPeca, setSelectedPeca] = useState<CatalogoPeca | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const pecaInputRef = useRef<HTMLInputElement>(null);
 
   const [operadores, setOperadores] = useState<Operador[]>([]);
   const [operadorId, setOperadorId] = useState("");
@@ -269,11 +270,12 @@ export default function DobraPage() {
     } else {
       setFeedback({ type: "ok", msg: `Peça "${selectedPeca.peca}" registrada com sucesso!` });
       clearPeca();
-      setOperadorId("");
       setQuantidade(1);
-      setObservacoes("");
-      setData(today());
       loadHistorico();
+      // Foca automaticamente no campo de busca para o próximo registro
+      setTimeout(() => {
+        pecaInputRef.current?.focus();
+      }, 50);
     }
   };
 
@@ -319,6 +321,7 @@ export default function DobraPage() {
             </label>
             <div className="relative">
               <input
+                ref={pecaInputRef}
                 type="text"
                 className="field pl-10 pr-10"
                 placeholder="Digite o código ou nome da peça (mín. 2 caracteres)..."
