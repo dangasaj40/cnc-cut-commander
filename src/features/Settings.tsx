@@ -23,7 +23,9 @@ import {
   UserPlus,
   ToggleLeft,
   ToggleRight,
-  Trash2
+  Trash2,
+  Sun,
+  Moon
 } from "lucide-react";
 
 function ParameterList({ title, paramKey }: { title: string, paramKey: string }) {
@@ -92,12 +94,36 @@ function ParameterList({ title, paramKey }: { title: string, paramKey: string })
 }
 
 // ─── Operadores Dobra Panel ───────────────────────────────────────────────────
-interface OpDobra { id: string; nome: string; ativo: boolean; }
+interface OpDobra { id: string; nome: string; ativo: boolean; turno: "D" | "N" | null; }
+
+const TURNO_CFG = {
+  D: { label: "Diurno",  color: "#f59e0b", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)" },
+  N: { label: "Noturno", color: "#3b82f6", bg: "rgba(59,130,246,0.12)",  border: "rgba(59,130,246,0.3)" },
+};
+
+function TurnoPill({ turno }: { turno: "D" | "N" | null }) {
+  if (!turno) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border border-dashed border-slate-500/40 text-slate-500">
+      Sem turno
+    </span>
+  );
+  const t = TURNO_CFG[turno];
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black"
+      style={{ background: t.bg, color: t.color, border: `1px solid ${t.border}` }}
+    >
+      {turno === "D" ? <Sun size={10} /> : <Moon size={10} />}
+      {t.label}
+    </span>
+  );
+}
 
 function OperadoresDobraPanel() {
   const [lista, setLista] = useState<OpDobra[]>([]);
   const [loading, setLoading] = useState(true);
   const [novoNome, setNovoNome] = useState("");
+  const [novoTurno, setNovoTurno] = useState<"D" | "N">("D");
   const [salvando, setSalvando] = useState(false);
   const [busca, setBusca] = useState("");
 
@@ -105,7 +131,8 @@ function OperadoresDobraPanel() {
     setLoading(true);
     const { data } = await supabase
       .from("operadores_dobra")
-      .select("id, nome, ativo")
+      .select("id, nome, ativo, turno")
+      .order("turno")
       .order("nome");
     setLista((data ?? []) as OpDobra[]);
     setLoading(false);
@@ -121,7 +148,7 @@ function OperadoresDobraPanel() {
       return;
     }
     setSalvando(true);
-    await supabase.from("operadores_dobra").insert({ nome });
+    await supabase.from("operadores_dobra").insert({ nome, turno: novoTurno });
     setNovoNome("");
     await load();
     setSalvando(false);
@@ -130,6 +157,12 @@ function OperadoresDobraPanel() {
   const toggleAtivo = async (op: OpDobra) => {
     await supabase.from("operadores_dobra").update({ ativo: !op.ativo }).eq("id", op.id);
     setLista(l => l.map(o => o.id === op.id ? { ...o, ativo: !o.ativo } : o));
+  };
+
+  const toggleTurno = async (op: OpDobra) => {
+    const novoTurnoOp: "D" | "N" = op.turno === "D" ? "N" : "D";
+    await supabase.from("operadores_dobra").update({ turno: novoTurnoOp }).eq("id", op.id);
+    setLista(l => l.map(o => o.id === op.id ? { ...o, turno: novoTurnoOp } : o));
   };
 
   const excluir = async (op: OpDobra) => {
@@ -152,23 +185,60 @@ function OperadoresDobraPanel() {
           <UserPlus size={20} />
           <h3 className="text-sm font-bold uppercase tracking-widest">Adicionar Operador de Dobra</h3>
         </div>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            className="field flex-1 uppercase"
-            placeholder="Nome do operador (ex: CARLOS)"
-            value={novoNome}
-            onChange={e => setNovoNome(e.target.value.toUpperCase())}
-            onKeyDown={e => e.key === "Enter" && adicionar()}
-          />
+
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-3 items-end">
+          {/* Nome */}
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Nome</label>
+            <input
+              type="text"
+              className="field uppercase"
+              placeholder="Nome do operador (ex: CARLOS)"
+              value={novoNome}
+              onChange={e => setNovoNome(e.target.value.toUpperCase())}
+              onKeyDown={e => e.key === "Enter" && adicionar()}
+            />
+          </div>
+
+          {/* Turno selector */}
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Turno</label>
+            <div className="flex rounded-xl overflow-hidden border border-white/10">
+              <button
+                type="button"
+                onClick={() => setNovoTurno("D")}
+                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all"
+                style={novoTurno === "D"
+                  ? { background: TURNO_CFG.D.bg, color: TURNO_CFG.D.color, borderRight: `1px solid ${TURNO_CFG.D.border}` }
+                  : { background: "transparent", color: "#64748b" }
+                }
+              >
+                <Sun size={12} /> Diurno
+              </button>
+              <button
+                type="button"
+                onClick={() => setNovoTurno("N")}
+                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all"
+                style={novoTurno === "N"
+                  ? { background: TURNO_CFG.N.bg, color: TURNO_CFG.N.color }
+                  : { background: "transparent", color: "#64748b" }
+                }
+              >
+                <Moon size={12} /> Noturno
+              </button>
+            </div>
+          </div>
+
+          {/* Botão Adicionar */}
           <button
             onClick={adicionar}
             disabled={salvando || !novoNome.trim()}
-            className="btn-primary px-6 flex items-center gap-2 disabled:opacity-50"
+            className="btn-primary px-6 py-2.5 flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
           >
             {salvando
               ? <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              : <><Plus size={16} /> Adicionar</>}
+              : <><Plus size={16} /> Adicionar</>
+            }
           </button>
         </div>
       </div>
@@ -193,6 +263,20 @@ function OperadoresDobraPanel() {
           </span>
         </div>
 
+        {/* Legenda */}
+        <div className="px-6 py-2 border-b border-white/5 flex items-center gap-4 bg-white/[0.01]">
+          <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Turno:</span>
+          <span className="flex items-center gap-1 text-[9px] font-bold" style={{ color: TURNO_CFG.D.color }}>
+            <Sun size={10} /> Diurno
+          </span>
+          <span className="flex items-center gap-1 text-[9px] font-bold" style={{ color: TURNO_CFG.N.color }}>
+            <Moon size={10} /> Noturno
+          </span>
+          <span className="text-[8px] text-muted-foreground ml-auto">
+            Clique no badge de turno para alternar
+          </span>
+        </div>
+
         {loading ? (
           <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
             <div className="size-5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
@@ -213,10 +297,24 @@ function OperadoresDobraPanel() {
                 </div>
                 {ativos.map(op => (
                   <div key={op.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] group transition-colors">
-                    <div className="size-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-[10px] font-black text-amber-400">
+                    {/* Avatar */}
+                    <div className="size-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-[10px] font-black text-amber-400 shrink-0">
                       {op.nome.charAt(0)}
                     </div>
+
+                    {/* Nome */}
                     <span className="text-sm font-bold flex-1">{op.nome}</span>
+
+                    {/* Badge turno clicável */}
+                    <button
+                      onClick={() => toggleTurno(op)}
+                      title={`Turno atual: ${op.turno ? TURNO_CFG[op.turno].label : "Sem turno"} — clique para alternar`}
+                      className="transition-transform hover:scale-105 active:scale-95"
+                    >
+                      <TurnoPill turno={op.turno} />
+                    </button>
+
+                    {/* Ativo/Inativo */}
                     <button
                       onClick={() => toggleAtivo(op)}
                       title="Desativar"
@@ -224,6 +322,8 @@ function OperadoresDobraPanel() {
                     >
                       <ToggleRight size={22} />
                     </button>
+
+                    {/* Excluir */}
                     <button
                       onClick={() => excluir(op)}
                       title="Excluir"
@@ -235,6 +335,7 @@ function OperadoresDobraPanel() {
                 ))}
               </>
             )}
+
             {/* Inativos */}
             {inativos.length > 0 && (
               <>
@@ -243,10 +344,20 @@ function OperadoresDobraPanel() {
                 </div>
                 {inativos.map(op => (
                   <div key={op.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] group transition-colors opacity-50">
-                    <div className="size-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-black text-muted-foreground">
+                    <div className="size-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-black text-muted-foreground shrink-0">
                       {op.nome.charAt(0)}
                     </div>
                     <span className="text-sm font-medium flex-1">{op.nome}</span>
+
+                    {/* Badge turno clicável mesmo inativo */}
+                    <button
+                      onClick={() => toggleTurno(op)}
+                      title="Alternar turno"
+                      className="transition-transform hover:scale-105 active:scale-95"
+                    >
+                      <TurnoPill turno={op.turno} />
+                    </button>
+
                     <button
                       onClick={() => toggleAtivo(op)}
                       title="Reativar"

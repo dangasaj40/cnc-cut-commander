@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
+import ReactDOM from "react-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { SectionHeader } from "@/components/SectionHeader";
 import { useAuth } from "@/lib/auth";
@@ -18,12 +19,25 @@ import {
   Layers,
   TrendingUp,
   BarChart3,
-  Activity
+  Sun,
+  Moon,
+  Package,
+  Pencil,
 } from "lucide-react";
-import { 
-  BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
-  AreaChart, Area
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Tooltip,
+  CartesianGrid,
+  AreaChart,
+  Area,
+  Legend,
 } from "recharts";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface CatalogoPeca {
   id: string;
@@ -38,6 +52,7 @@ interface CatalogoPeca {
 interface Operador {
   id: string;
   nome: string;
+  turno: "D" | "N" | null;
 }
 
 interface DobraRecord {
@@ -49,18 +64,59 @@ interface DobraRecord {
   espessura_mm: string | null;
   peso_kg: number | null;
   quantidade: number;
+  operador_id: string | null;
   operador_nome: string | null;
+  turno: "D" | "N" | null;
+  balsa: string | null;
   data: string;
   observacoes: string | null;
   created_at: string;
 }
 
+// ─── Date Helpers ─────────────────────────────────────────────────────────────
+
 const today = () => new Date().toISOString().split("T")[0];
 
-export default function DobraPage() {
-  const { user, isSupervisor, isAdmin } = useAuth();
+const firstOfMonth = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 
-  // ── Formulário ──
+const lastOfMonth = (d = new Date()) =>
+  new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split("T")[0];
+
+const calcPrevMonth = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return { inicio: firstOfMonth(d), fim: lastOfMonth(d) };
+};
+
+// ─── Turno helpers ────────────────────────────────────────────────────────────
+
+const TURNO = {
+  D: { label: "Diurno", color: "#f59e0b", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.25)" },
+  N: { label: "Noturno", color: "#3b82f6", bg: "rgba(59,130,246,0.12)", border: "rgba(59,130,246,0.25)" },
+};
+
+function TurnoBadge({ turno, size = "sm" }: { turno: "D" | "N" | null; size?: "xs" | "sm" }) {
+  if (!turno) return <span className="text-muted-foreground">—</span>;
+  const t = TURNO[turno];
+  const cls = size === "xs"
+    ? "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8px] font-black"
+    : "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black";
+  return (
+    <span className={cls} style={{ background: t.bg, color: t.color, border: `1px solid ${t.border}` }}>
+      {turno === "D" ? <Sun size={size === "xs" ? 9 : 11} /> : <Moon size={size === "xs" ? 9 : 11} />}
+      {t.label}
+    </span>
+  );
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export default function DobraPage() {
+  const { user, isAdmin, isSupervisor } = useAuth();
+
+  // ── Form state ──
   const [pecaQuery, setPecaQuery] = useState("");
   const [pecaSuggestions, setPecaSuggestions] = useState<CatalogoPeca[]>([]);
   const [selectedPeca, setSelectedPeca] = useState<CatalogoPeca | null>(null);
@@ -68,45 +124,77 @@ export default function DobraPage() {
   const searchRef = useRef<HTMLDivElement>(null);
   const pecaInputRef = useRef<HTMLInputElement>(null);
 
-  const [operadores, setOperadores] = useState<Operador[]>([]);
+  const [operadores, setOperadores] = useState<OpDobra[]>([]); // type OpDobra is declared above
+  type OpDobra = Operador;
   const [operadorId, setOperadorId] = useState("");
   const [quantidade, setQuantidade] = useState(1);
+  const [balsaTipo, setBalsaTipo] = useState<"RAKE" | "BOX" | "S/TAG">("RAKE");
+  const [balsaNumero, setBalsaNumero] = useState("");
   const [data, setData] = useState(today());
   const [observacoes, setObservacoes] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
 
-  // ── Histórico e Filtros ──
-  const [filtroInicio, setFiltroInicio] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30); // Padrão: Últimos 30 dias
-    return d.toISOString().split("T")[0];
-  });
-  const [filtroFim, setFiltroFim] = useState(today());
+  // ── Edit Modal state ──
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editRecord, setEditRecord] = useState<DobraRecord | null>(null);
+  const [editPecaQuery, setEditPecaQuery] = useState("");
+  const [editPecaSuggestions, setEditPecaSuggestions] = useState<CatalogoPeca[]>([]);
+  const [editSelectedPeca, setEditSelectedPeca] = useState<CatalogoPeca | null>(null);
+  const [editShowSuggestions, setEditShowSuggestions] = useState(false);
+  const [editOperadorId, setEditOperadorId] = useState("");
+  const [editQuantidade, setEditQuantidade] = useState(1);
+  const [editBalsaTipo, setEditBalsaTipo] = useState<"RAKE" | "BOX" | "S/TAG">("RAKE");
+  const [editBalsaNumero, setEditBalsaNumero] = useState("");
+  const [editData, setEditData] = useState("");
+  const [editObservacoes, setEditObservacoes] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editFeedback, setEditFeedback] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
+  const editSearchRef = useRef<HTMLDivElement>(null);
+  const editPecaInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Filter state — default: mês atual ──
+  const [filtroInicio, setFiltroInicio] = useState(firstOfMonth);
+  const [filtroFim, setFiltroFim] = useState(lastOfMonth);
+  const [filtroTurno, setFiltroTurno] = useState<"" | "D" | "N">("");
+
+  // ── Data ──
   const [historico, setHistorico] = useState<DobraRecord[]>([]);
   const [loadingHist, setLoadingHist] = useState(false);
 
-  // ── Cálculo do Dashboard de Dobra ──
+  // ─────────────────────────────────────────────
+  // Computed: filtered records + stats
+  // ─────────────────────────────────────────────
+
+  const historicoFiltrado = useMemo(() => {
+    if (!filtroTurno) return historico;
+    return historico.filter((r) => r.turno === filtroTurno);
+  }, [historico, filtroTurno]);
+
   const stats = useMemo(() => {
-    let pecas = 0;
-    let pesoKg = 0;
-    const ops = new Set<string>();
+    const calc = (records: DobraRecord[]) => {
+      let pecas = 0;
+      let pesoKg = 0;
+      const ops = new Set<string>();
+      records.forEach((r) => {
+        pecas += r.quantidade;
+        pesoKg += (Number(r.peso_kg) || 0) * r.quantidade;
+        if (r.operador_nome) ops.add(r.operador_nome);
+      });
+      return { pecas, tons: Number((pesoKg / 1000).toFixed(3)), ops: ops.size };
+    };
 
-    historico.forEach((r) => {
-      pecas += r.quantidade;
-      pesoKg += (Number(r.peso_kg) || 0) * r.quantidade;
-      if (r.operador_nome) ops.add(r.operador_nome);
-    });
+    const total = calc(historicoFiltrado);
+    const statD = calc(historico.filter((r) => r.turno === "D"));
+    const statN = calc(historico.filter((r) => r.turno === "N"));
 
-    // Agrupamento por dia (Toneladas)
+    // Chart 1: Volume por dia (toneladas) — usa registros filtrados por turno
     const diaMap: Record<string, number> = {};
-    historico.forEach((r) => {
-      const dStr = r.data;
-      const toneladas = ((Number(r.peso_kg) || 0) * r.quantidade) / 1000;
-      diaMap[dStr] = (diaMap[dStr] || 0) + toneladas;
+    historicoFiltrado.forEach((r) => {
+      const t = ((Number(r.peso_kg) || 0) * r.quantidade) / 1000;
+      diaMap[r.data] = (diaMap[r.data] || 0) + t;
     });
-
     const chartDia = Object.entries(diaMap)
       .map(([rawDate, toneladas]) => {
         const parts = rawDate.split("-");
@@ -115,46 +203,55 @@ export default function DobraPage() {
       })
       .sort((a, b) => a.rawDate.localeCompare(b.rawDate));
 
-    // Agrupamento por operador (Toneladas)
-    const opMap: Record<string, number> = {};
+    // Chart 2: Produção por operador — sempre usa historico completo (data) para mostrar D e N
+    const opMap: Record<string, { D: number; N: number }> = {};
     historico.forEach((r) => {
       const op = r.operador_nome || "Sem Nome";
-      const toneladas = ((Number(r.peso_kg) || 0) * r.quantidade) / 1000;
-      opMap[op] = (opMap[op] || 0) + toneladas;
+      if (!opMap[op]) opMap[op] = { D: 0, N: 0 };
+      const t = ((Number(r.peso_kg) || 0) * r.quantidade) / 1000;
+      if (r.turno === "N") opMap[op].N += t;
+      else opMap[op].D += t;
     });
-
     const chartOp = Object.entries(opMap)
-      .map(([name, toneladas]) => ({
-        name,
-        toneladas: Number(toneladas.toFixed(3)),
+      .map(([fullName, v]) => ({
+        name: fullName.split(" ").slice(0, 2).join(" "),
+        fullName,
+        diurno: Number(v.D.toFixed(3)),
+        noturno: Number(v.N.toFixed(3)),
+        total: Number((v.D + v.N).toFixed(3)),
       }))
-      .sort((a, b) => b.toneladas - a.toneladas);
+      .sort((a, b) => b.total - a.total);
 
-    return {
-      totalPecas: pecas,
-      totalTons: Number((pesoKg / 1000).toFixed(3)),
-      totalOps: ops.size,
-      chartDia,
-      chartOp,
-    };
-  }, [historico]);
+    // Chart 3: Peças por Balsa
+    const balsaMap: Record<string, number> = {};
+    historicoFiltrado.forEach((r) => {
+      if (!r.balsa) return;
+      balsaMap[r.balsa] = (balsaMap[r.balsa] || 0) + r.quantidade;
+    });
+    const chartBalsa = Object.entries(balsaMap)
+      .map(([balsa, qtd]) => ({ balsa, qtd }))
+      .sort((a, b) => b.qtd - a.qtd)
+      .slice(0, 15); // máx 15 balsas
+
+    return { total, statD, statN, chartDia, chartOp, chartBalsa };
+  }, [historico, historicoFiltrado]);
 
   // ─────────────────────────────────────────────
-  // Fechar sugestões ao clicar fora
+  // Effects
   // ─────────────────────────────────────────────
+
+  // Click-outside handlers for both searches
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node))
         setShowSuggestions(false);
-      }
+      if (editSearchRef.current && !editSearchRef.current.contains(e.target as Node))
+        setEditShowSuggestions(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // ─────────────────────────────────────────────
-  // Carregar operadores e histórico
-  // ─────────────────────────────────────────────
   useEffect(() => {
     loadOperadores();
   }, []);
@@ -163,38 +260,7 @@ export default function DobraPage() {
     loadHistorico();
   }, [filtroInicio, filtroFim]);
 
-  const loadOperadores = async () => {
-    const { data: ops } = await supabase
-      .from("operadores_dobra")
-      .select("id, nome")
-      .eq("ativo", true)
-      .order("nome");
-    setOperadores((ops ?? []) as Operador[]);
-  };
-
-  const loadHistorico = async () => {
-    setLoadingHist(true);
-    let query = supabase
-      .from("dobra")
-      .select("*")
-      .order("data", { ascending: false })
-      .order("created_at", { ascending: false });
-
-    if (filtroInicio) {
-      query = query.gte("data", filtroInicio);
-    }
-    if (filtroFim) {
-      query = query.lte("data", filtroFim);
-    }
-
-    const { data: hist } = await query;
-    setHistorico((hist ?? []) as DobraRecord[]);
-    setLoadingHist(false);
-  };
-
-  // ─────────────────────────────────────────────
-  // Busca dinâmica de peças no catálogo
-  // ─────────────────────────────────────────────
+  // Busca dinâmica de peças — Insert
   useEffect(() => {
     if (!pecaQuery || pecaQuery.length < 2) {
       setPecaSuggestions([]);
@@ -212,6 +278,56 @@ export default function DobraPage() {
     return () => clearTimeout(timer);
   }, [pecaQuery]);
 
+  // Busca dinâmica de peças — Edit
+  useEffect(() => {
+    if (!editPecaQuery || editPecaQuery.length < 2 || editSelectedPeca?.peca === editPecaQuery) {
+      setEditPecaSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const { data: results } = await supabase
+        .from("catalogo_pecas")
+        .select("id, peca, nesting, painel, dimensional, espessura_mm, peso_kg")
+        .ilike("peca", `%${editPecaQuery}%`)
+        .limit(10);
+      setEditPecaSuggestions((results ?? []) as CatalogoPeca[]);
+      setEditShowSuggestions(true);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [editPecaQuery, editSelectedPeca]);
+
+  // ─────────────────────────────────────────────
+  // Data loaders
+  // ─────────────────────────────────────────────
+
+  const loadOperadores = async () => {
+    const { data: ops } = await supabase
+      .from("operadores_dobra")
+      .select("id, nome, turno")
+      .eq("ativo", true)
+      .order("turno")
+      .order("nome");
+    setOperadores((ops ?? []) as Operador[]);
+  };
+
+  const loadHistorico = async () => {
+    setLoadingHist(true);
+    let query = supabase
+      .from("dobra")
+      .select("*")
+      .order("data", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (filtroInicio) query = query.gte("data", filtroInicio);
+    if (filtroFim) query = query.lte("data", filtroFim);
+    const { data: hist } = await query;
+    setHistorico((hist ?? []) as DobraRecord[]);
+    setLoadingHist(false);
+  };
+
+  // ─────────────────────────────────────────────
+  // Peca handlers
+  // ─────────────────────────────────────────────
+
   const selectPeca = (p: CatalogoPeca) => {
     setSelectedPeca(p);
     setPecaQuery(p.peca);
@@ -226,24 +342,39 @@ export default function DobraPage() {
   };
 
   // ─────────────────────────────────────────────
-  // Salvar registro de dobra
+  // Period shortcuts
   // ─────────────────────────────────────────────
+
+  const applyMesAtual = () => {
+    setFiltroInicio(firstOfMonth());
+    setFiltroFim(lastOfMonth());
+  };
+
+  const applyMesAnterior = () => {
+    const { inicio, fim } = calcPrevMonth();
+    setFiltroInicio(inicio);
+    setFiltroFim(fim);
+  };
+
+  const applyHoje = () => {
+    const t = today();
+    setFiltroInicio(t);
+    setFiltroFim(t);
+  };
+
+  // ─────────────────────────────────────────────
+  // Save / Update / Delete
+  // ─────────────────────────────────────────────
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
-
-    if (!selectedPeca) {
-      setFeedback({ type: "err", msg: "Selecione uma peça da lista do catálogo." });
-      return;
-    }
-    if (!operadorId) {
-      setFeedback({ type: "err", msg: "Selecione o operador responsável." });
-      return;
-    }
-    if (quantidade < 1) {
-      setFeedback({ type: "err", msg: "A quantidade deve ser maior que zero." });
-      return;
-    }
+    if (!selectedPeca)
+      return setFeedback({ type: "err", msg: "Selecione uma peça da lista do catálogo." });
+    if (!operadorId)
+      return setFeedback({ type: "err", msg: "Selecione o operador responsável." });
+    if (quantidade < 1)
+      return setFeedback({ type: "err", msg: "A quantidade deve ser maior que zero." });
 
     setBusy(true);
     const op = operadores.find((o) => o.id === operadorId);
@@ -258,6 +389,8 @@ export default function DobraPage() {
       quantidade,
       operador_id: operadorId,
       operador_nome: op?.nome ?? null,
+      turno: op?.turno ?? null,
+      balsa: balsaTipo === "S/TAG" ? "S/TAG" : (balsaNumero.trim() ? `${balsaTipo}-${balsaNumero.trim()}` : null),
       data,
       observacoes: observacoes.trim() || null,
       criado_por: user?.id,
@@ -271,30 +404,140 @@ export default function DobraPage() {
       setFeedback({ type: "ok", msg: `Peça "${selectedPeca.peca}" registrada com sucesso!` });
       clearPeca();
       setQuantidade(1);
+      setBalsaNumero("");
       loadHistorico();
-      // Foca automaticamente no campo de busca para o próximo registro
-      setTimeout(() => {
-        pecaInputRef.current?.focus();
-      }, 50);
+      setTimeout(() => pecaInputRef.current?.focus(), 50);
     }
   };
 
-  // ─────────────────────────────────────────────
-  // Excluir registro
-  // ─────────────────────────────────────────────
-  const handleDelete = async (id: string) => {
-    if (!isAdmin) {
-      alert("Apenas administradores podem excluir registros.");
-      return;
+  const startEdit = (r: DobraRecord) => {
+    setEditRecord(r);
+    setEditSelectedPeca({
+      id: "",
+      peca: r.peca,
+      nesting: r.nesting,
+      painel: r.painel,
+      dimensional: r.dimensional,
+      espessura_mm: r.espessura_mm,
+      peso_kg: r.peso_kg,
+    });
+    setEditPecaQuery(r.peca);
+    setEditOperadorId(r.operador_id || "");
+    setEditQuantidade(r.quantidade);
+    setEditData(r.data);
+    setEditObservacoes(r.observacoes || "");
+
+    if (r.balsa === "S/TAG") {
+      setEditBalsaTipo("S/TAG");
+      setEditBalsaNumero("");
+    } else if (r.balsa?.startsWith("RAKE-")) {
+      setEditBalsaTipo("RAKE");
+      setEditBalsaNumero(r.balsa.substring(5));
+    } else if (r.balsa?.startsWith("BOX-")) {
+      setEditBalsaTipo("BOX");
+      setEditBalsaNumero(r.balsa.substring(4));
+    } else {
+      setEditBalsaTipo("RAKE");
+      setEditBalsaNumero("");
     }
+
+    setEditModalOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setEditModalOpen(false);
+    setEditRecord(null);
+    setEditFeedback(null);
+    setEditPecaQuery("");
+    setEditSelectedPeca(null);
+    setEditPecaSuggestions([]);
+  };
+
+  const selectEditPeca = (p: CatalogoPeca) => {
+    setEditSelectedPeca(p);
+    setEditPecaQuery(p.peca);
+    setEditShowSuggestions(false);
+    setEditPecaSuggestions([]);
+  };
+
+  const clearEditPeca = () => {
+    setEditSelectedPeca(null);
+    setEditPecaQuery("");
+    setEditPecaSuggestions([]);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditFeedback(null);
+    if (!editSelectedPeca)
+      return setEditFeedback({ type: "err", msg: "Selecione uma peça da lista do catálogo." });
+    if (!editOperadorId)
+      return setEditFeedback({ type: "err", msg: "Selecione o operador responsável." });
+    if (editQuantidade < 1)
+      return setEditFeedback({ type: "err", msg: "A quantidade deve ser maior que zero." });
+
+    setEditBusy(true);
+    const op = operadores.find((o) => o.id === editOperadorId);
+
+    const { error } = await supabase
+      .from("dobra")
+      .update({
+        peca: editSelectedPeca.peca,
+        nesting: editSelectedPeca.nesting,
+        painel: editSelectedPeca.painel,
+        dimensional: editSelectedPeca.dimensional,
+        espessura_mm: editSelectedPeca.espessura_mm,
+        peso_kg: editSelectedPeca.peso_kg,
+        quantidade: editQuantidade,
+        operador_id: editOperadorId,
+        operador_nome: op?.nome ?? null,
+        turno: op?.turno ?? null,
+        balsa: editBalsaTipo === "S/TAG" ? "S/TAG" : (editBalsaNumero.trim() ? `${editBalsaTipo}-${editBalsaNumero.trim()}` : null),
+        data: editData,
+        observacoes: editObservacoes.trim() || null,
+      })
+      .eq("id", editRecord?.id);
+
+    setEditBusy(false);
+
+    if (error) {
+      setEditFeedback({ type: "err", msg: "Erro ao atualizar: " + error.message });
+    } else {
+      closeEditModal();
+      loadHistorico();
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!isAdmin && !isSupervisor) return alert("Apenas administradores ou supervisores podem excluir registros.");
     if (!confirm("Excluir este registro de dobra?")) return;
     await supabase.from("dobra").delete().eq("id", id);
     loadHistorico();
   };
 
+  // ── Operator groups for select ──
+  const opsDiurno = operadores.filter((o) => o.turno === "D");
+  const opsNoturno = operadores.filter((o) => o.turno === "N");
+  const opsSemTurno = operadores.filter((o) => !o.turno);
+
+  // ── Label do período selecionado ──
+  const periodoLabel = useMemo(() => {
+    if (!filtroInicio && !filtroFim) return "Todos os registros";
+    if (filtroInicio === filtroFim)
+      return new Date(filtroInicio + "T12:00:00").toLocaleDateString("pt-BR");
+    const ini = new Date(filtroInicio + "T12:00:00").toLocaleDateString("pt-BR", {
+      day: "2-digit", month: "short",
+    });
+    const fim = new Date(filtroFim + "T12:00:00").toLocaleDateString("pt-BR", {
+      day: "2-digit", month: "short", year: "numeric",
+    });
+    return `${ini} – ${fim}`;
+  }, [filtroInicio, filtroFim]);
+
   // ─────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────
+
   return (
     <div className="flex flex-col gap-6">
       <SectionHeader
@@ -344,7 +587,6 @@ export default function DobraPage() {
                 </button>
               )}
 
-              {/* Dropdown de sugestões */}
               {showSuggestions && pecaSuggestions.length > 0 && (
                 <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[#1E293B] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
                   {pecaSuggestions.map((p) => (
@@ -373,7 +615,6 @@ export default function DobraPage() {
               )}
             </div>
 
-            {/* Card de pré-visualização da peça selecionada */}
             {selectedPeca && (
               <div className="mt-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
@@ -390,13 +631,15 @@ export default function DobraPage() {
                 </div>
                 <div>
                   <div className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Espessura / Peso</div>
-                  <div className="text-xs">{selectedPeca.espessura_mm ? `${selectedPeca.espessura_mm}mm` : "—"} / {selectedPeca.peso_kg ? `${selectedPeca.peso_kg}kg` : "—"}</div>
+                  <div className="text-xs">
+                    {selectedPeca.espessura_mm ? `${selectedPeca.espessura_mm}mm` : "—"} / {selectedPeca.peso_kg ? `${selectedPeca.peso_kg}kg` : "—"}
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Operador */}
+          {/* Operador — agrupado por turno */}
           <div className="space-y-1.5">
             <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
               <User size={11} className="text-amber-400" /> Operador Responsável
@@ -409,12 +652,45 @@ export default function DobraPage() {
                 required
               >
                 <option value="">Selecione o operador...</option>
-                {operadores.map((op) => (
-                  <option key={op.id} value={op.id}>{op.nome}</option>
-                ))}
+
+                {opsDiurno.length > 0 && (
+                  <optgroup label="☀️ Diurno">
+                    {opsDiurno.map((op) => (
+                      <option key={op.id} value={op.id}>{op.nome}</option>
+                    ))}
+                  </optgroup>
+                )}
+
+                {opsNoturno.length > 0 && (
+                  <optgroup label="🌙 Noturno">
+                    {opsNoturno.map((op) => (
+                      <option key={op.id} value={op.id}>{op.nome}</option>
+                    ))}
+                  </optgroup>
+                )}
+
+                {opsSemTurno.length > 0 && (
+                  <optgroup label="Sem turno definido">
+                    {opsSemTurno.map((op) => (
+                      <option key={op.id} value={op.id}>{op.nome}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             </div>
+
+            {/* Preview do turno do operador selecionado */}
+            {operadorId && (() => {
+              const op = operadores.find(o => o.id === operadorId);
+              if (!op?.turno) return null;
+              return (
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[9px] text-muted-foreground uppercase tracking-widest">Turno do operador:</span>
+                  <TurnoBadge turno={op.turno} size="xs" />
+                </div>
+              );
+            })()}
           </div>
 
           {/* Quantidade */}
@@ -432,6 +708,40 @@ export default function DobraPage() {
             />
           </div>
 
+          {/* Balsa (Rake/Box/S/TAG + Numero manual) */}
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+              <Package size={11} className="text-amber-400" /> Balsa (Modelo / Nº)
+            </label>
+            <div className="flex gap-2">
+              <div className="relative w-28 shrink-0">
+                <select
+                  className="field appearance-none pr-8 text-xs py-2.5 bg-[#1E293B] text-white border-white/10"
+                  style={{ colorScheme: 'dark' }}
+                  value={balsaTipo}
+                  onChange={(e) => {
+                    const val = e.target.value as "RAKE" | "BOX" | "S/TAG";
+                    setBalsaTipo(val);
+                    if (val === "S/TAG") setBalsaNumero("");
+                  }}
+                >
+                  <option value="RAKE" style={{ background: '#1E293B', color: '#fff' }}>RAKE</option>
+                  <option value="BOX" style={{ background: '#1E293B', color: '#fff' }}>BOX</option>
+                  <option value="S/TAG" style={{ background: '#1E293B', color: '#fff' }}>S/TAG</option>
+                </select>
+                <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              </div>
+              <input
+                type="text"
+                className="field text-xs py-2.5 disabled:opacity-50 disabled:bg-slate-100/50 dark:disabled:bg-white/[0.03]"
+                placeholder={balsaTipo === "S/TAG" ? "Sem número" : "Número (Ex: 13)"}
+                value={balsaTipo === "S/TAG" ? "" : balsaNumero}
+                onChange={(e) => setBalsaNumero(e.target.value)}
+                disabled={balsaTipo === "S/TAG"}
+              />
+            </div>
+          </div>
+
           {/* Data */}
           <div className="space-y-1.5">
             <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
@@ -447,7 +757,7 @@ export default function DobraPage() {
           </div>
 
           {/* Observações */}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 md:col-span-2">
             <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
               Observações (opcional)
             </label>
@@ -461,19 +771,20 @@ export default function DobraPage() {
           </div>
         </div>
 
-        {/* Feedback */}
         {feedback && (
           <div className={`flex items-start gap-3 p-4 rounded-2xl border text-xs font-bold ${
             feedback.type === "ok"
               ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
               : "bg-red-500/10 border-red-500/20 text-red-400"
           }`}>
-            {feedback.type === "ok" ? <CheckCircle size={16} className="shrink-0 mt-0.5" /> : <AlertCircle size={16} className="shrink-0 mt-0.5" />}
+            {feedback.type === "ok"
+              ? <CheckCircle size={16} className="shrink-0 mt-0.5" />
+              : <AlertCircle size={16} className="shrink-0 mt-0.5" />}
             {feedback.msg}
           </div>
         )}
 
-        {/* Botão Salvar */}
+        {/* Botões Salvar */}
         <button
           type="submit"
           disabled={busy || !selectedPeca}
@@ -487,43 +798,114 @@ export default function DobraPage() {
         </button>
       </form>
 
-      {/* ── FILTROS E DASHBOARD ── */}
+      {/* ── FILTROS E ANÁLISE ── */}
       <div className="space-y-6">
-        {/* Filtro por data */}
-        <div className="glass-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-widest text-slate-800">Período de Análise</h3>
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">Filtre as dobras por data e visualize os gráficos</p>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex flex-col gap-1">
-              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Início</span>
-              <input
-                type="date"
-                className="field py-2 px-3 text-xs w-36 text-slate-900 bg-white"
-                value={filtroInicio}
-                onChange={(e) => setFiltroInicio(e.target.value)}
-              />
+
+        {/* Barra de filtros */}
+        <div className="glass-card p-5 flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+
+            {/* Lado esq: label do período + atalhos */}
+            <div className="flex flex-col gap-2">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-slate-800">Período de Análise</h3>
+                <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">{periodoLabel}</p>
+              </div>
+              {/* Atalhos rápidos */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={applyHoje}
+                  className="px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-full border transition-all border-slate-300 text-slate-600 hover:border-amber-400 hover:text-amber-600 hover:bg-amber-50"
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  onClick={applyMesAtual}
+                  className="px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-full border transition-all border-amber-400 text-amber-600 bg-amber-50 hover:bg-amber-100"
+                >
+                  Mês Atual
+                </button>
+                <button
+                  type="button"
+                  onClick={applyMesAnterior}
+                  className="px-3 py-1 text-[9px] font-bold uppercase tracking-widest rounded-full border transition-all border-slate-300 text-slate-600 hover:border-amber-400 hover:text-amber-600 hover:bg-amber-50"
+                >
+                  Mês Anterior
+                </button>
+              </div>
             </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Fim</span>
-              <input
-                type="date"
-                className="field py-2 px-3 text-xs w-36 text-slate-900 bg-white"
-                value={filtroFim}
-                onChange={(e) => setFiltroFim(e.target.value)}
-              />
+
+            {/* Lado dir: inputs de data + filtro de turno */}
+            <div className="flex items-end gap-4 flex-wrap">
+              {/* Datas */}
+              <div className="flex items-end gap-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Início</span>
+                  <input
+                    type="date"
+                    className="field py-2 px-3 text-xs w-36 text-slate-900 bg-white"
+                    value={filtroInicio}
+                    onChange={(e) => setFiltroInicio(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Fim</span>
+                  <input
+                    type="date"
+                    className="field py-2 px-3 text-xs w-36 text-slate-900 bg-white"
+                    value={filtroFim}
+                    onChange={(e) => setFiltroFim(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Filtro de turno */}
+              <div className="flex flex-col gap-1">
+                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Turno</span>
+                <div className="flex items-center rounded-xl overflow-hidden border border-slate-200">
+                  {(["", "D", "N"] as const).map((t) => {
+                    const active = filtroTurno === t;
+                    const label = t === "" ? "Todos" : t === "D" ? "Diurno" : "Noturno";
+                    const Icon = t === "D" ? Sun : t === "N" ? Moon : null;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setFiltroTurno(t)}
+                        className="px-3 py-2 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 transition-all"
+                        style={
+                          active
+                            ? t === ""
+                              ? { background: "#1E293B", color: "#fff" }
+                              : t === "D"
+                              ? { background: TURNO.D.bg, color: TURNO.D.color, borderLeft: `1px solid ${TURNO.D.border}`, borderRight: `1px solid ${TURNO.D.border}` }
+                              : { background: TURNO.N.bg, color: TURNO.N.color }
+                            : { background: "transparent", color: "#64748b" }
+                        }
+                      >
+                        {Icon && <Icon size={10} />}
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Métricas Principais (KPIs) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* ── KPIs ── */}
+        {/* Linha 1: KPIs totais (filtrados pelo turno selecionado) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="glass-card p-5 flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Volume Dobrado</span>
-              <div className="text-2xl font-black text-slate-900">{stats.totalTons.toFixed(3)}t</div>
-              <span className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">Toneladas acumuladas</span>
+              <div className="text-2xl font-black text-slate-900">{stats.total.tons.toFixed(3)}t</div>
+              <span className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">
+                {filtroTurno ? TURNO[filtroTurno].label : "Todos os turnos"}
+              </span>
             </div>
             <div className="size-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
               <Weight size={20} />
@@ -533,8 +915,10 @@ export default function DobraPage() {
           <div className="glass-card p-5 flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Peças Processadas</span>
-              <div className="text-2xl font-black text-slate-900">{stats.totalPecas} un</div>
-              <span className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">Quantidade de peças</span>
+              <div className="text-2xl font-black text-slate-900">{stats.total.pecas} un</div>
+              <span className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">
+                {filtroTurno ? TURNO[filtroTurno].label : "Todos os turnos"}
+              </span>
             </div>
             <div className="size-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
               <Layers size={20} />
@@ -544,8 +928,8 @@ export default function DobraPage() {
           <div className="glass-card p-5 flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Operadores Ativos</span>
-              <div className="text-2xl font-black text-slate-900">{stats.totalOps}</div>
-              <span className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">No setor de dobra</span>
+              <div className="text-2xl font-black text-slate-900">{stats.total.ops}</div>
+              <span className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">No período</span>
             </div>
             <div className="size-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
               <User size={20} />
@@ -553,12 +937,66 @@ export default function DobraPage() {
           </div>
         </div>
 
-        {/* Gráficos */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Gráfico 1: Volume Dobrado por Dia */}
+        {/* Linha 2: Comparativo Diurno vs Noturno (só aparece quando "Todos" está selecionado) */}
+        {!filtroTurno && (
+          <div className="grid grid-cols-2 gap-4">
+            {/* Diurno */}
+            <div
+              className="glass-card p-5 flex items-center justify-between"
+              style={{ borderLeft: `3px solid ${TURNO.D.color}` }}
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Sun size={14} style={{ color: TURNO.D.color }} />
+                  <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: TURNO.D.color }}>
+                    Diurno
+                  </span>
+                </div>
+                <div className="text-xl font-black text-slate-900">{stats.statD.tons.toFixed(3)}t</div>
+                <div className="text-[9px] text-slate-500">{stats.statD.pecas} peças</div>
+              </div>
+              <div
+                className="size-10 rounded-xl flex items-center justify-center"
+                style={{ background: TURNO.D.bg, border: `1px solid ${TURNO.D.border}` }}
+              >
+                <Sun size={18} style={{ color: TURNO.D.color }} />
+              </div>
+            </div>
+
+            {/* Noturno */}
+            <div
+              className="glass-card p-5 flex items-center justify-between"
+              style={{ borderLeft: `3px solid ${TURNO.N.color}` }}
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Moon size={14} style={{ color: TURNO.N.color }} />
+                  <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: TURNO.N.color }}>
+                    Noturno
+                  </span>
+                </div>
+                <div className="text-xl font-black text-slate-900">{stats.statN.tons.toFixed(3)}t</div>
+                <div className="text-[9px] text-slate-500">{stats.statN.pecas} peças</div>
+              </div>
+              <div
+                className="size-10 rounded-xl flex items-center justify-center"
+                style={{ background: TURNO.N.bg, border: `1px solid ${TURNO.N.border}` }}
+              >
+                <Moon size={18} style={{ color: TURNO.N.color }} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Gráficos ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+
+          {/* Gráfico 1: Volume por Dia */}
           <div className="glass-card p-6 min-h-[350px] flex flex-col">
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-6 flex items-center gap-2">
-              <TrendingUp size={16} className="text-amber-500" /> Histórico de Dobras por Dia (t)
+              <TrendingUp size={16} className="text-amber-500" />
+              Volume Dobrado por Dia (t)
+              {filtroTurno && <TurnoBadge turno={filtroTurno} size="xs" />}
             </h3>
             <div className="flex-1 w-full" style={{ height: "240px" }}>
               {stats.chartDia.length === 0 ? (
@@ -570,30 +1008,53 @@ export default function DobraPage() {
                   <AreaChart data={stats.chartDia} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorTons" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#d97706" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#d97706" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="#d97706" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#d97706" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#475569" }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#475569" }} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#ffffff", border: "1px solid rgba(0,0,0,0.1)", borderRadius: "8px", color: "#000" }}
+                      contentStyle={{ backgroundColor: "#ffffff", border: "1px solid rgba(0,0,0,0.1)", borderRadius: "8px" }}
                       labelStyle={{ fontSize: 10, fontWeight: "bold", color: "#0f172a" }}
                       itemStyle={{ fontSize: 10, color: "#d97706" }}
                     />
-                    <Area type="monotone" dataKey="toneladas" stroke="#d97706" strokeWidth={2} fillOpacity={1} fill="url(#colorTons)" name="Toneladas" />
+                    <Area
+                      type="monotone"
+                      dataKey="toneladas"
+                      stroke="#d97706"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#colorTons)"
+                      name="Toneladas"
+                    />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
             </div>
           </div>
 
-          {/* Gráfico 2: Desempenho por Operador */}
+          {/* Gráfico 2: Produção por Operador (separado por turno) */}
           <div className="glass-card p-6 min-h-[350px] flex flex-col">
-            <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-6 flex items-center gap-2">
-              <BarChart3 size={16} className="text-amber-500" /> Produção por Operador (t)
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-1 flex items-center gap-2">
+              <BarChart3 size={16} className="text-amber-500" />
+              Produção por Operador (t)
             </h3>
+            <div className="flex items-center gap-3 mb-5 mt-1">
+              {(filtroTurno === "" || filtroTurno === "D") && (
+                <span className="flex items-center gap-1 text-[9px] font-bold" style={{ color: TURNO.D.color }}>
+                  <span className="size-2 rounded-full inline-block" style={{ background: TURNO.D.color }} />
+                  Diurno
+                </span>
+              )}
+              {(filtroTurno === "" || filtroTurno === "N") && (
+                <span className="flex items-center gap-1 text-[9px] font-bold" style={{ color: TURNO.N.color }}>
+                  <span className="size-2 rounded-full inline-block" style={{ background: TURNO.N.color }} />
+                  Noturno
+                </span>
+              )}
+            </div>
             <div className="flex-1 w-full" style={{ height: "240px" }}>
               {stats.chartOp.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-xs text-slate-400 uppercase font-bold tracking-widest">
@@ -606,11 +1067,88 @@ export default function DobraPage() {
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#475569" }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#475569" }} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#ffffff", border: "1px solid rgba(0,0,0,0.1)", borderRadius: "8px", color: "#000" }}
+                      contentStyle={{ backgroundColor: "#ffffff", border: "1px solid rgba(0,0,0,0.1)", borderRadius: "8px" }}
+                      labelStyle={{ fontSize: 10, fontWeight: "bold", color: "#0f172a" }}
+                      itemStyle={{ fontSize: 10 }}
+                      formatter={(value: number, name: string) => [
+                        `${value.toFixed(3)} t`,
+                        name === "diurno" ? "☀️ Diurno" : "🌙 Noturno",
+                      ]}
+                    />
+                    {(filtroTurno === "" || filtroTurno === "D") && (
+                      <Bar
+                        dataKey="diurno"
+                        fill={TURNO.D.color}
+                        radius={filtroTurno === "D" ? [4, 4, 0, 0] : [2, 2, 0, 0]}
+                        name="diurno"
+                        barSize={filtroTurno ? 30 : 18}
+                        stackId={filtroTurno ? undefined : "a"}
+                      />
+                    )}
+                    {(filtroTurno === "" || filtroTurno === "N") && (
+                      <Bar
+                        dataKey="noturno"
+                        fill={TURNO.N.color}
+                        radius={[4, 4, 0, 0]}
+                        name="noturno"
+                        barSize={filtroTurno ? 30 : 18}
+                        stackId={filtroTurno ? undefined : "a"}
+                      />
+                    )}
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          {/* Gráfico 3: Peças por Balsa */}
+          <div className="glass-card p-6 min-h-[350px] flex flex-col lg:col-span-2 xl:col-span-1">
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-6 flex items-center gap-2">
+              <Package size={16} className="text-amber-500" />
+              Peças por Balsa
+              {filtroTurno && <TurnoBadge turno={filtroTurno} size="xs" />}
+            </h3>
+            <div className="flex-1 w-full" style={{ height: "240px" }}>
+              {stats.chartBalsa.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs text-slate-400 uppercase font-bold tracking-widest">
+                  Sem dados de balsa no período
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={stats.chartBalsa}
+                    layout="vertical"
+                    margin={{ top: 0, right: 30, left: 10, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(0,0,0,0.05)" />
+                    <XAxis
+                      type="number"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 9, fill: "#475569" }}
+                      allowDecimals={false}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="balsa"
+                      width={72}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 9, fill: "#475569", fontFamily: "monospace" }}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#ffffff", border: "1px solid rgba(0,0,0,0.1)", borderRadius: "8px" }}
                       labelStyle={{ fontSize: 10, fontWeight: "bold", color: "#0f172a" }}
                       itemStyle={{ fontSize: 10, color: "#d97706" }}
+                      formatter={(value: number) => [`${value} peça${value !== 1 ? "s" : ""}`, "Quantidade"]}
                     />
-                    <Bar dataKey="toneladas" fill="#d97706" radius={[4, 4, 0, 0]} name="Toneladas" barSize={30} />
+                    <Bar
+                      dataKey="qtd"
+                      fill="#d97706"
+                      radius={[0, 4, 4, 0]}
+                      name="Peças"
+                      barSize={16}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -621,11 +1159,12 @@ export default function DobraPage() {
 
       {/* ── HISTÓRICO ── */}
       <div className="glass-card overflow-hidden">
-        <div className="px-6 py-5 border-b border-white/5 flex items-center gap-3">
+        <div className="px-6 py-5 border-b border-white/5 flex items-center gap-3 flex-wrap">
           <Layers size={16} className="text-amber-400" />
           <h2 className="text-[10px] font-bold uppercase tracking-[0.2em]">Histórico de Dobras</h2>
+          {filtroTurno && <TurnoBadge turno={filtroTurno} size="xs" />}
           <span className="ml-auto text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-            {historico.length} registro{historico.length !== 1 ? "s" : ""}
+            {historicoFiltrado.length} registro{historicoFiltrado.length !== 1 ? "s" : ""}
           </span>
         </div>
 
@@ -634,10 +1173,10 @@ export default function DobraPage() {
             <div className="size-6 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
             <span className="text-xs uppercase tracking-widest font-bold">Carregando...</span>
           </div>
-        ) : historico.length === 0 ? (
+        ) : historicoFiltrado.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
             <Hammer size={32} className="opacity-20" />
-            <p className="text-xs uppercase tracking-widest font-bold">Nenhum registro ainda</p>
+            <p className="text-xs uppercase tracking-widest font-bold">Nenhum registro no período</p>
           </div>
         ) : (
           <>
@@ -646,7 +1185,7 @@ export default function DobraPage() {
               <table className="w-full text-left">
                 <thead className="bg-white/5">
                   <tr>
-                    {["Data", "Peça", "Nesting / Painel", "Dim. / Esp.", "Peso (kg)", "Qtd", "Operador", "Obs.", ""].map((h) => (
+                    {["Data", "Turno", "Peça", "Nesting / Painel", "Balsa", "Dim. / Esp.", "Peso (kg)", "Qtd", "Operador", "Obs.", ""].map((h) => (
                       <th key={h} className="px-5 py-3.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
                         {h}
                       </th>
@@ -654,10 +1193,13 @@ export default function DobraPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {historico.map((r) => (
+                  {historicoFiltrado.map((r) => (
                     <tr key={r.id} className="hover:bg-white/[0.02] transition-colors group">
                       <td className="px-5 py-3.5 text-xs font-mono text-muted-foreground whitespace-nowrap">
                         {new Date(r.data + "T12:00:00").toLocaleDateString("pt-BR")}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <TurnoBadge turno={r.turno} size="xs" />
                       </td>
                       <td className="px-5 py-3.5">
                         <span className="text-sm font-bold">{r.peca}</span>
@@ -665,6 +1207,15 @@ export default function DobraPage() {
                       <td className="px-5 py-3.5 text-[10px] text-muted-foreground">
                         <div>{r.nesting || "—"}</div>
                         <div className="text-[9px]">{r.painel || ""}</div>
+                      </td>
+                      <td className="px-5 py-3.5 text-xs font-mono">
+                        {r.balsa ? (
+                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-[10px] font-mono">
+                            {r.balsa}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5 text-[10px] font-mono text-muted-foreground whitespace-nowrap">
                         {r.dimensional || "—"}<br />
@@ -679,16 +1230,30 @@ export default function DobraPage() {
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-xs font-medium">{r.operador_nome || "—"}</td>
-                      <td className="px-5 py-3.5 text-[10px] text-muted-foreground max-w-[140px] truncate">{r.observacoes || "—"}</td>
-                      <td className="px-5 py-3.5">
-                        {isAdmin && (
-                          <button
-                            onClick={() => handleDelete(r.id)}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
+                      <td className="px-5 py-3.5 text-[10px] text-muted-foreground max-w-[140px] truncate">
+                        {r.observacoes || "—"}
+                      </td>
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {(isAdmin || isSupervisor) && (
+                            <button
+                              onClick={() => startEdit(r)}
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-all"
+                              title="Editar Registro"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                          {(isAdmin || isSupervisor) && (
+                            <button
+                              onClick={() => handleDelete(r.id)}
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-all"
+                              title="Excluir Registro"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -698,7 +1263,7 @@ export default function DobraPage() {
 
             {/* Mobile cards */}
             <div className="md:hidden divide-y divide-white/5">
-              {historico.map((r) => (
+              {historicoFiltrado.map((r) => (
                 <div key={r.id} className="p-5 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -707,26 +1272,39 @@ export default function DobraPage() {
                         {new Date(r.data + "T12:00:00").toLocaleDateString("pt-BR")} · {r.operador_nome || "—"}
                       </div>
                     </div>
-                    <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                      {r.quantidade} un
-                    </span>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <TurnoBadge turno={r.turno} size="xs" />
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        {r.quantidade} un
+                      </span>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2 text-[9px] text-muted-foreground">
+                    {r.balsa && <span className="px-2 py-0.5 bg-amber-500/10 text-amber-600 rounded-full border border-amber-500/20 font-bold font-mono">Balsa: {r.balsa}</span>}
                     {r.nesting && <span className="px-2 py-0.5 bg-white/5 rounded-full border border-white/10">Nesting: {r.nesting}</span>}
                     {r.painel && <span className="px-2 py-0.5 bg-white/5 rounded-full border border-white/10">Painel: {r.painel}</span>}
                     {r.espessura_mm && <span className="px-2 py-0.5 bg-white/5 rounded-full border border-white/10">{r.espessura_mm}mm</span>}
                     {r.peso_kg && <span className="px-2 py-0.5 bg-white/5 rounded-full border border-white/10">{r.peso_kg}kg</span>}
                   </div>
-                  {r.observacoes && (
-                    <p className="text-[10px] text-muted-foreground italic">{r.observacoes}</p>
-                  )}
-                  {isAdmin && (
-                    <button
-                      onClick={() => handleDelete(r.id)}
-                      className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-red-400 transition-colors"
-                    >
-                      <Trash2 size={12} /> Excluir
-                    </button>
+                  {r.observacoes && <p className="text-[10px] text-muted-foreground italic">{r.observacoes}</p>}
+                  
+                  {(isAdmin || isSupervisor) && (
+                    <div className="flex gap-3 pt-2 border-t border-white/5">
+                      <button
+                        onClick={() => startEdit(r)}
+                        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-amber-500 transition-colors"
+                      >
+                        <Pencil size={12} /> Editar
+                      </button>
+                      {(isAdmin || isSupervisor) && (
+                        <button
+                          onClick={() => handleDelete(r.id)}
+                          className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 size={12} /> Excluir
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
@@ -734,6 +1312,253 @@ export default function DobraPage() {
           </>
         )}
       </div>
+
+      {editModalOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) closeEditModal(); }}
+        >
+          <div className="bg-[#1E293B] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 relative flex flex-col gap-6 text-slate-100">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/5 pb-4">
+              <div className="flex items-center gap-3 text-amber-400">
+                <Hammer size={18} />
+                <h3 className="text-sm font-bold uppercase tracking-widest">Editar Registro de Dobra</h3>
+              </div>
+              <button
+                onClick={closeEditModal}
+                className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
+                title="Fechar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Edit Form */}
+            <form onSubmit={handleUpdate} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+                {/* Busca de Peça */}
+                <div className="md:col-span-2 space-y-1.5" ref={editSearchRef}>
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                    <Search size={11} className="text-amber-400" /> Buscar Peça no Catálogo
+                  </label>
+                  <div className="relative">
+                    <input
+                      ref={editPecaInputRef}
+                      type="text"
+                      className="field pl-10 pr-10 bg-slate-900 border-white/10 text-white"
+                      placeholder="Digite o código ou nome da peça..."
+                      value={editPecaQuery}
+                      onChange={(e) => {
+                        setEditPecaQuery(e.target.value);
+                        if (editSelectedPeca) setEditSelectedPeca(null);
+                      }}
+                      onFocus={() => editPecaSuggestions.length > 0 && setEditShowSuggestions(true)}
+                      autoComplete="off"
+                    />
+                    <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    {editPecaQuery && (
+                      <button
+                        type="button"
+                        onClick={clearEditPeca}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+
+                    {editShowSuggestions && editPecaSuggestions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[#1E293B] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+                        {editPecaSuggestions.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => selectEditPeca(p)}
+                            className="w-full text-left px-4 py-3 hover:bg-white/[0.06] transition-colors border-b border-white/5 last:border-0"
+                          >
+                            <div className="text-sm font-bold text-white">{p.peca}</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 flex gap-3">
+                              {p.nesting && <span>Nesting: {p.nesting}</span>}
+                              {p.painel && <span>Painel: {p.painel}</span>}
+                              {p.espessura_mm && <span>{p.espessura_mm}mm</span>}
+                              {p.peso_kg && <span>{p.peso_kg} kg</span>}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {editSelectedPeca && (
+                    <div className="mt-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div>
+                        <div className="text-[8px] font-bold text-amber-400 uppercase tracking-widest mb-1">Peça</div>
+                        <div className="text-xs font-black">{editSelectedPeca.peca}</div>
+                      </div>
+                      <div>
+                        <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Nesting</div>
+                        <div className="text-xs font-mono">{editSelectedPeca.nesting || "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Dimensional</div>
+                        <div className="text-xs font-mono">{editSelectedPeca.dimensional || "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Espessura / Peso</div>
+                        <div className="text-xs">
+                          {editSelectedPeca.espessura_mm ? `${editSelectedPeca.espessura_mm}mm` : "—"} / {editSelectedPeca.peso_kg ? `${editSelectedPeca.peso_kg}kg` : "—"}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Operador */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                    <User size={11} className="text-amber-400" /> Operador Responsável
+                  </label>
+                  <div className="relative">
+                    <select
+                      className="field appearance-none pr-10 bg-slate-900 border-white/10 text-white"
+                      value={editOperadorId}
+                      onChange={(e) => setEditOperadorId(e.target.value)}
+                      required
+                    >
+                      <option value="" className="bg-slate-900">Selecione o operador...</option>
+                      {opsDiurno.length > 0 && (
+                        <optgroup label="☀️ Diurno" className="bg-slate-900 text-slate-300">
+                          {opsDiurno.map((op) => (
+                            <option key={op.id} value={op.id} className="bg-slate-900 text-white">{op.nome}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {opsNoturno.length > 0 && (
+                        <optgroup label="🌙 Noturno" className="bg-slate-900 text-slate-300">
+                          {opsNoturno.map((op) => (
+                            <option key={op.id} value={op.id} className="bg-slate-900 text-white">{op.nome}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Quantidade */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                    <Hash size={11} className="text-amber-400" /> Quantidade
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="field bg-slate-900 border-white/10 text-white"
+                    value={editQuantidade}
+                    onChange={(e) => setEditQuantidade(Number(e.target.value))}
+                    required
+                  />
+                </div>
+
+                {/* Balsa */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                    <Package size={11} className="text-amber-400" /> Balsa (Modelo / Nº)
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative w-28 shrink-0">
+                      <select
+                        className="field appearance-none pr-8 text-xs py-2.5 bg-slate-900 border-white/10 text-white"
+                        style={{ colorScheme: 'dark' }}
+                        value={editBalsaTipo}
+                        onChange={(e) => {
+                          const val = e.target.value as "RAKE" | "BOX" | "S/TAG";
+                          setEditBalsaTipo(val);
+                          if (val === "S/TAG") setEditBalsaNumero("");
+                        }}
+                      >
+                        <option value="RAKE" style={{ background: '#0f172a', color: '#fff' }}>RAKE</option>
+                        <option value="BOX" style={{ background: '#0f172a', color: '#fff' }}>BOX</option>
+                        <option value="S/TAG" style={{ background: '#0f172a', color: '#fff' }}>S/TAG</option>
+                      </select>
+                      <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    </div>
+                    <input
+                      type="text"
+                      className="field text-xs py-2.5 bg-slate-900 border-white/10 text-white disabled:opacity-50 disabled:bg-slate-900/50"
+                      placeholder={editBalsaTipo === "S/TAG" ? "Sem número" : "Número"}
+                      value={editBalsaTipo === "S/TAG" ? "" : editBalsaNumero}
+                      onChange={(e) => setEditBalsaNumero(e.target.value)}
+                      disabled={editBalsaTipo === "S/TAG"}
+                    />
+                  </div>
+                </div>
+
+                {/* Data */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                    <Calendar size={11} className="text-amber-400" /> Data
+                  </label>
+                  <input
+                    type="date"
+                    className="field bg-slate-900 border-white/10 text-white"
+                    value={editData}
+                    onChange={(e) => setEditData(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {/* Observações */}
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                    Observações (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    className="field bg-slate-900 border-white/10 text-white"
+                    value={editObservacoes}
+                    onChange={(e) => setEditObservacoes(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {editFeedback && (
+                <div className={`flex items-start gap-3 p-4 rounded-2xl border text-xs font-bold ${
+                  editFeedback.type === "ok"
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                    : "bg-red-500/10 border-red-500/20 text-red-400"
+                }`}>
+                  {editFeedback.type === "ok" ? <CheckCircle size={16} className="shrink-0 mt-0.5" /> : <AlertCircle size={16} className="shrink-0 mt-0.5" />}
+                  {editFeedback.msg}
+                </div>
+              )}
+
+              {/* Form buttons */}
+              <div className="flex gap-3 pt-4 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  className="px-4 py-3 rounded-xl border border-white/10 text-xs font-bold uppercase tracking-widest hover:bg-white/5 transition-colors w-1/3 text-slate-300"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editBusy || !editSelectedPeca}
+                  className="btn-primary flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-black border-amber-600 text-xs uppercase font-bold tracking-wider disabled:opacity-50"
+                >
+                  {editBusy ? (
+                    <div className="size-4 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin mx-auto" />
+                  ) : (
+                    "Salvar Alterações"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
