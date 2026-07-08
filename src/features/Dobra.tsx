@@ -28,7 +28,15 @@ import {
   Activity,
   History,
   AlertTriangle,
+  Sparkles,
+  Camera,
+  ImagePlus,
+  CheckCircle2,
+  FileCheck,
 } from "lucide-react";
+
+// Carregamento dinâmico da SDK Gemini (igual ao GerenciarCatalogo)
+const getGemini = () => import("@google/generative-ai");
 import {
   BarChart,
   Bar,
@@ -216,6 +224,32 @@ export default function DobraPage() {
   const [manMotivo, setManMotivo] = useState("");
   const [manObs, setManObs] = useState("");
   const [busyManParada, setBusyManParada] = useState(false);
+
+  // ── AI Bulk Import state ──
+  interface AiBulkRow {
+    id: string; // key temporário
+    peca: string;
+    quantidade: number;
+    nesting: string | null;
+    painel: string | null;
+    dimensional: string | null;
+    espessura_mm: string | null;
+    peso_kg: number | null;
+    catalogMatch: boolean;
+    balsaTipo: "RAKE" | "BOX" | "S/TAG";
+    balsaNumero: string;
+  }
+  const [aiImportOpen, setAiImportOpen] = useState(false);
+  const aiFileRef = useRef<HTMLInputElement>(null);
+  const [aiPreviewUrl, setAiPreviewUrl] = useState<string | null>(null);
+  const [aiImageB64, setAiImageB64] = useState<string | null>(null);
+  const [aiImageMime, setAiImageMime] = useState<string>("image/jpeg");
+  const [aiProcessing, setAiProcessing] = useState(false);
+  const [aiStep, setAiStep] = useState<"upload" | "reviewing">("upload");
+  const [aiRows, setAiRows] = useState<AiBulkRow[]>([]);
+  const [aiBulkOperadorId, setAiBulkOperadorId] = useState("");
+  const [aiBulkData, setAiBulkData] = useState(today());
+  const [aiBulkBusy, setAiBulkBusy] = useState(false);
 
   // ─────────────────────────────────────────────
   // Computed: filtered records + stats
@@ -574,6 +608,153 @@ export default function DobraPage() {
       await loadParadas();
     } catch (err: any) {
       alert("Erro ao excluir: " + err.message);
+    }
+  };
+
+  // ─────────────────────────────────────────────
+  // AI Bulk Import handlers
+  // ─────────────────────────────────────────────
+
+  const handleAiImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAiImageMime(file.type || "image/jpeg");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setAiPreviewUrl(dataUrl);
+      setAiImageB64(dataUrl.split(",")[1]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const processImageWithAI = async () => {
+    if (!aiImageB64) return;
+    setAiProcessing(true);
+    try {
+      const { data: keyData } = await supabase
+        .from("system_settings")
+        .select("value")
+        .eq("key", "gemini_api_key")
+        .maybeSingle();
+      const apiKey =
+        keyData?.value ||
+        localStorage.getItem("gemini_api_key") ||
+        (import.meta as any).env?.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("Chave API Gemini não configurada. Vá em Configurações → Sistema.");
+
+      const { GoogleGenerativeAI } = await getGemini();
+      const genAI = new GoogleGenerativeAI(apiKey.trim());
+
+      const modelsToTry = ["gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-2.0-flash"];
+      const prompt = `Você é um especialista em leitura de documentos industriais de CNC e corte de chapas metálicas.
+Analise esta imagem de uma lista de peças processadas e extraia todos os itens encontrados.
+
+Para cada peça identificada, retorne:
+- "peca": o código ou nome da peça (ex: "3.01.0478" ou "SUPORTE LATERAL")
+- "quantidade": a quantidade processada (número inteiro)
+
+IMPORTANTE: Retorne APENAS um array JSON puro, sem markdown, sem explicação.
+Exemplo: [{"peca": "3.01.0478", "quantidade": 5}, {"peca": "3.01.0521", "quantidade": 3}]
+Se não encontrar nenhuma peça legível, retorne: []`;
+
+      let parsed: { peca: string; quantidade: number }[] = [];
+      for (const modelName of modelsToTry) {
+        try {
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const result = await model.generateContent([
+            prompt,
+            { inlineData: { data: aiImageB64, mimeType: aiImageMime } },
+          ]);
+          const text = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
+          const match = text.match(/\[.*\]/s);
+          parsed = JSON.parse(match ? match[0] : text);
+          break;
+        } catch (err: any) {
+          console.warn(`Modelo ${modelName} falhou:`, err.message);
+          if (err.message?.includes("API_KEY_INVALID")) throw new Error("Chave API inválida.");
+        }
+      }
+
+      if (!parsed || parsed.length === 0) {
+        alert("A IA não encontrou peças legíveis na imagem. Tente uma foto mais nítida.");
+        return;
+      }
+
+      // Enriquece cada linha buscando no catálogo
+      const enriched: AiBulkRow[] = await Promise.all(
+        parsed.map(async (item, i) => {
+          const { data: matches } = await supabase
+            .from("catalogo_pecas")
+            .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg")
+            .ilike("peca", `%${item.peca.trim()}%`)
+            .limit(1);
+          const cat = matches?.[0];
+          return {
+            id: `row-${i}-${Date.now()}`,
+            peca: cat?.peca ?? item.peca.trim(),
+            quantidade: item.quantidade ?? 1,
+            nesting: cat?.nesting ?? null,
+            painel: cat?.painel ?? null,
+            dimensional: cat?.dimensional ?? null,
+            espessura_mm: cat?.espessura_mm ?? null,
+            peso_kg: cat ? Number(cat.peso_kg) : null,
+            catalogMatch: !!cat,
+            balsaTipo: "RAKE" as const,
+            balsaNumero: "",
+          };
+        })
+      );
+
+      setAiRows(enriched);
+      setAiStep("reviewing");
+    } catch (err: any) {
+      alert("Erro na IA: " + err.message);
+    } finally {
+      setAiProcessing(false);
+    }
+  };
+
+  const saveBulkRows = async () => {
+    if (!aiBulkOperadorId) { alert("Selecione o operador responsável."); return; }
+    if (aiRows.length === 0) return;
+    setAiBulkBusy(true);
+    try {
+      const op = operadores.find((o) => o.id === aiBulkOperadorId);
+      const payload = aiRows.map((r) => ({
+        peca: r.peca,
+        nesting: r.nesting,
+        painel: r.painel,
+        dimensional: r.dimensional,
+        espessura_mm: r.espessura_mm,
+        peso_kg: r.peso_kg,
+        quantidade: r.quantidade,
+        operador_id: aiBulkOperadorId,
+        operador_nome: op?.nome ?? null,
+        turno: op?.turno ?? null,
+        maquina: maquinaAtiva,
+        balsa: r.balsaTipo === "S/TAG" ? "S/TAG" : (r.balsaNumero.trim() ? `${r.balsaTipo}-${r.balsaNumero.trim()}` : null),
+        data: aiBulkData,
+        observacoes: "Importado via IA",
+        criado_por: user?.id,
+      }));
+
+      const { error } = await supabase.from("dobra").insert(payload);
+      if (error) throw error;
+
+      // Reset modal
+      setAiImportOpen(false);
+      setAiStep("upload");
+      setAiRows([]);
+      setAiImageB64(null);
+      setAiPreviewUrl(null);
+      setAiBulkOperadorId("");
+      loadHistorico();
+      alert(`✅ ${payload.length} peça(s) registrada(s) com sucesso!`);
+    } catch (err: any) {
+      alert("Erro ao salvar: " + err.message);
+    } finally {
+      setAiBulkBusy(false);
     }
   };
 
@@ -1067,202 +1248,90 @@ export default function DobraPage() {
           </div>
         )}
 
-        {/* Botões Salvar */}
-        <button
-          type="submit"
-          disabled={busy || !selectedPeca}
-          className="btn-primary w-full py-4 flex items-center justify-center gap-3 text-sm font-bold disabled:opacity-50"
-        >
-          {busy ? (
-            <div className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          ) : (
-            <><PlusCircle size={18} /> Registrar Dobra</>
-          )}
-        </button>
+        {/* Botões de ação */}
+        <div className="flex gap-3">
+          <button
+            type="submit"
+            disabled={busy || !selectedPeca}
+            className="btn-primary flex-1 py-4 flex items-center justify-center gap-3 text-sm font-bold disabled:opacity-50"
+          >
+            {busy ? (
+              <div className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <><PlusCircle size={18} /> Registrar Dobra</>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAiImportOpen(true); setAiStep("upload"); }}
+            className="flex items-center justify-center gap-2 px-5 py-4 rounded-2xl bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 hover:border-violet-500/50 text-violet-400 hover:text-violet-300 text-xs font-bold uppercase tracking-widest transition-all"
+            title="Importar peças em lote via foto com IA"
+          >
+            <Sparkles size={16} />
+            <span className="hidden sm:inline">IA Foto</span>
+          </button>
+        </div>
       </form>
 
-      {/* ── SEÇÃO DE CONTROLE DE PARADAS ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Card 1: Status / Controle de Parada Ativa */}
-        <div className="glass-card p-6 flex flex-col justify-between text-left">
-          <div>
-            <div className="flex items-center gap-3 text-red-500 mb-4">
-              <Activity size={18} className={activeStop ? "animate-pulse" : ""} />
-              <h2 className="text-[10px] font-bold uppercase tracking-[0.2em]">
-                Controle de Parada ({MAQUINA[maquinaAtiva].label})
-              </h2>
+      {/* ── SEÇÃO DE HISTÓRICO DE PARADAS ── */}
+      <div className="glass-card p-6 flex flex-col justify-between min-h-[300px]">
+        <div>
+          <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
+            <div className="flex items-center gap-3 text-slate-400">
+              <History size={16} />
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em]">Histórico de Paradas ({MAQUINA[maquinaAtiva].label})</h3>
             </div>
-
-            {activeStop ? (
-              /* MÁQUINA ATUALMENTE PARADA */
-              <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
-                  <AlertTriangle className="text-red-500 shrink-0 animate-bounce mt-0.5" size={18} />
-                  <div className="space-y-1">
-                    <h4 className="text-xs font-black uppercase text-red-400">Máquina Parada</h4>
-                    <p className="text-[11px] text-slate-300">
-                      Motivo: <strong className="text-white">{activeStop.motivo}</strong>
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      Operador: {activeStop.operador_nome} · Iniciado em: {new Date(activeStop.data_inicio).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                    {activeStop.observacao && (
-                      <p className="text-[10px] text-slate-400 italic">" {activeStop.observacao} "</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Observação de Retorno</label>
-                  <input
-                    type="text"
-                    className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
-                    placeholder="Opcional: Detalhes sobre a manutenção/retorno..."
-                    value={obsParada}
-                    onChange={(e) => setObsParada(e.target.value)}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => finishParada(activeStop.id)}
-                  disabled={busyParada}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
-                >
-                  {busyParada ? (
-                    <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <>Finalizar Parada / Retornar Máquina</>
-                  )}
-                </button>
-              </div>
-            ) : (
-              /* MÁQUINA EM OPERAÇÃO (INICIAR PARADA) */
-              <form onSubmit={startParada} className="space-y-4">
-                <p className="text-xs text-slate-500">
-                  A máquina está ativa. Se precisar parar para manutenção, limpeza ou troca de ferramentas, registre abaixo para cronometrar a duração.
-                </p>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Operador</label>
-                    <select
-                      className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
-                      style={{ colorScheme: 'dark' }}
-                      value={opParadaId}
-                      onChange={(e) => setOpParadaId(e.target.value)}
-                    >
-                      <option value="" style={{ background: '#1E293B' }}>Selecionar...</option>
-                      {operadores.map((o) => (
-                        <option key={o.id} value={o.id} style={{ background: '#1E293B' }}>{o.nome}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Motivo</label>
-                    <select
-                      className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
-                      style={{ colorScheme: 'dark' }}
-                      value={motivoParada}
-                      onChange={(e) => setMotivoParada(e.target.value)}
-                    >
-                      <option value="" style={{ background: '#1E293B' }}>Selecionar...</option>
-                      {motivosParada.map((m) => (
-                        <option key={m} value={m} style={{ background: '#1E293B' }}>{m}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Observação Inicial</label>
-                  <input
-                    type="text"
-                    className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
-                    placeholder="Opcional: Descreva o problema ou ação..."
-                    value={obsParada}
-                    onChange={(e) => setObsParada(e.target.value)}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={busyParada}
-                  className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
-                >
-                  {busyParada ? (
-                    <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <>Parar Máquina Agora</>
-                  )}
-                </button>
-              </form>
-            )}
+            <button
+              type="button"
+              onClick={() => setManualParadaOpen(true)}
+              className="text-[9px] font-black uppercase tracking-widest text-amber-500 hover:text-amber-400 flex items-center gap-1"
+            >
+              <PlusCircle size={12} /> Lançar Parada Manual
+            </button>
           </div>
-        </div>
 
-        {/* Card 2: Histórico de Paradas do Período */}
-        <div className="glass-card p-6 flex flex-col justify-between min-h-[300px]">
-          <div>
-            <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
-              <div className="flex items-center gap-3 text-slate-400">
-                <History size={16} />
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em]">Histórico de Paradas ({MAQUINA[maquinaAtiva].label})</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setManualParadaOpen(true)}
-                className="text-[9px] font-black uppercase tracking-widest text-amber-500 hover:text-amber-400 flex items-center gap-1"
-              >
-                <PlusCircle size={12} /> Lançar Parada Manual
-              </button>
+          {loadingParadas ? (
+            <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
+              <div className="size-5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+              <span className="text-xs uppercase tracking-widest font-bold">Carregando...</span>
             </div>
-
-            {loadingParadas ? (
-              <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
-                <div className="size-5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-                <span className="text-xs uppercase tracking-widest font-bold">Carregando...</span>
-              </div>
-            ) : paradas.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <Activity size={24} className="opacity-20 mb-2" />
-                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Sem paradas registradas</span>
-              </div>
-            ) : (
-              <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1 text-left">
-                {paradas.map((p) => (
-                  <div key={p.id} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-black text-slate-100 uppercase tracking-widest">{p.motivo}</span>
-                        {p.status === "Em aberto" ? (
-                          <span className="px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full text-[8px] font-bold uppercase">Em aberto</span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-full text-[8px] font-mono text-slate-400">{p.duracao_minutos} min</span>
-                        )}
-                      </div>
-                      <div className="text-[9px] text-muted-foreground">
-                        {p.operador_nome} · {new Date(p.data_inicio).toLocaleDateString("pt-BR")} às {new Date(p.data_inicio).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                      {p.observacao && <p className="text-[9px] text-muted-foreground italic truncate max-w-[280px]">"{p.observacao}"</p>}
+          ) : paradas.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <Activity size={24} className="opacity-20 mb-2" />
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Sem paradas registradas</span>
+            </div>
+          ) : (
+            <div className="max-h-[280px] overflow-y-auto space-y-2 pr-1 text-left">
+              {paradas.map((p) => (
+                <div key={p.id} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black text-slate-100 uppercase tracking-widest">{p.motivo}</span>
+                      {p.status === "Em aberto" ? (
+                        <span className="px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full text-[8px] font-bold uppercase">Em aberto</span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-full text-[8px] font-mono text-slate-400">{p.duracao_minutos} min</span>
+                      )}
                     </div>
-
-                    {(isAdmin || isSupervisor) && (
-                      <button
-                        onClick={() => deleteParada(p.id)}
-                        className="text-muted-foreground hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10 transition-colors shrink-0 ml-auto"
-                        title="Excluir Parada"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
+                    <div className="text-[9px] text-muted-foreground">
+                      {p.operador_nome} · {new Date(p.data_inicio).toLocaleDateString("pt-BR")} às {new Date(p.data_inicio).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    {p.observacao && <p className="text-[9px] text-muted-foreground italic truncate max-w-[280px]">"{p.observacao}"</p>}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+
+                  {(isAdmin || isSupervisor) && (
+                    <button
+                      onClick={() => deleteParada(p.id)}
+                      className="text-muted-foreground hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10 transition-colors shrink-0 ml-auto"
+                      title="Excluir Parada"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2171,6 +2240,267 @@ export default function DobraPage() {
         </div>,
         document.body
       )}
+
+      {/* ── MODAL IA: IMPORTAR VIA FOTO ── */}
+      {aiImportOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-3"
+          onClick={(e) => { if (e.target === e.currentTarget) { setAiImportOpen(false); setAiStep("upload"); } }}
+        >
+          <div className="bg-[#0f172a] border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-xl bg-violet-600/20 flex items-center justify-center">
+                  <Sparkles size={16} className="text-violet-400" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-white">Importar Peças via Foto</h3>
+                  <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5">
+                    {aiStep === "upload" ? "Passo 1 — Selecionar Imagem" : `Passo 2 — Revisar ${aiRows.length} peça(s) extraída(s)`}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => { setAiImportOpen(false); setAiStep("upload"); setAiRows([]); setAiPreviewUrl(null); setAiImageB64(null); }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+              {/* STEP 1: Upload */}
+              {aiStep === "upload" && (
+                <div className="space-y-5">
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Tire uma foto da <strong className="text-white">lista impressa de peças processadas</strong> (planilha, romaneio, folha de nesting). O Gemini Vision irá identificar os códigos e quantidades automaticamente.
+                  </p>
+
+                  {/* Drop zone / preview */}
+                  <div
+                    onClick={() => aiFileRef.current?.click()}
+                    className="relative border-2 border-dashed border-white/10 hover:border-violet-500/40 rounded-2xl transition-colors cursor-pointer overflow-hidden"
+                    style={{ minHeight: 200 }}
+                  >
+                    {aiPreviewUrl ? (
+                      <img src={aiPreviewUrl} alt="Preview" className="w-full object-contain max-h-72 rounded-2xl" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
+                        <Camera size={40} className="opacity-30" />
+                        <p className="text-xs font-bold uppercase tracking-widest">Clique para selecionar ou fotografar</p>
+                        <p className="text-[9px] text-slate-600 uppercase tracking-widest">JPG, PNG, WEBP — até 20 MB</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <input
+                    ref={aiFileRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleAiImagePick}
+                  />
+
+                  {aiPreviewUrl && (
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => { setAiPreviewUrl(null); setAiImageB64(null); }}
+                        className="px-4 py-2.5 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
+                      >
+                        Trocar Imagem
+                      </button>
+                      <button
+                        type="button"
+                        onClick={processImageWithAI}
+                        disabled={aiProcessing}
+                        className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-black py-2.5 px-5 rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                      >
+                        {aiProcessing ? (
+                          <>
+                            <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Analisando com Gemini...
+                          </>
+                        ) : (
+                          <><Sparkles size={14} /> Analisar com IA</>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* STEP 2: Review table */}
+              {aiStep === "reviewing" && (
+                <div className="space-y-5">
+                  {/* Operator + Date */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Operador Responsável *</label>
+                      <select
+                        className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                        style={{ colorScheme: 'dark' }}
+                        value={aiBulkOperadorId}
+                        onChange={(e) => setAiBulkOperadorId(e.target.value)}
+                        required
+                      >
+                        <option value="" style={{ background: '#0f172a' }}>Selecionar...</option>
+                        {operadores.map((o) => (
+                          <option key={o.id} value={o.id} style={{ background: '#0f172a' }}>{o.nome}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Data de Processamento *</label>
+                      <input
+                        type="date"
+                        className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                        value={aiBulkData}
+                        onChange={(e) => setAiBulkData(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Summary bar */}
+                  <div className="flex items-center gap-4 p-3 bg-white/[0.02] border border-white/5 rounded-xl text-[10px]">
+                    <span className="text-slate-400">{aiRows.length} linha(s) extraída(s)</span>
+                    <span className="text-emerald-400 flex items-center gap-1">
+                      <FileCheck size={11} /> {aiRows.filter(r => r.catalogMatch).length} com catálogo
+                    </span>
+                    {aiRows.some(r => !r.catalogMatch) && (
+                      <span className="text-amber-400 flex items-center gap-1">
+                        <AlertTriangle size={11} /> {aiRows.filter(r => !r.catalogMatch).length} sem correspondência
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => { setAiStep("upload"); setAiRows([]); }}
+                      className="ml-auto text-slate-500 hover:text-white text-[9px] uppercase tracking-widest font-bold"
+                    >
+                      ← Nova foto
+                    </button>
+                  </div>
+
+                  {/* Editable table */}
+                  <div className="overflow-x-auto rounded-xl border border-white/5">
+                    <table className="w-full text-left">
+                      <thead className="bg-white/[0.03]">
+                        <tr>
+                          {["Peça", "Qtd", "Peso (kg)", "Balsa", "Status", ""].map(h => (
+                            <th key={h} className="px-3 py-2.5 text-[8px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {aiRows.map((row, idx) => (
+                          <tr key={row.id} className={`group ${!row.catalogMatch ? "bg-amber-500/[0.04]" : ""}`}>
+                            <td className="px-3 py-2">
+                              <div className="text-[10px] font-bold text-white">{row.peca}</div>
+                              {row.nesting && <div className="text-[8px] text-slate-500 font-mono">{row.nesting}</div>}
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                min={1}
+                                className="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-violet-500/50"
+                                value={row.quantidade}
+                                onChange={(e) => setAiRows(rows => rows.map((r, i) =>
+                                  i === idx ? { ...r, quantidade: Math.max(1, Number(e.target.value)) } : r
+                                ))}
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-[10px] font-mono text-slate-400">
+                              {row.peso_kg != null ? `${row.peso_kg} kg` : <span className="text-amber-500/70">—</span>}
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-1">
+                                <select
+                                  className="bg-white/5 border border-white/10 rounded-lg px-1.5 py-1 text-[9px] text-white focus:outline-none"
+                                  style={{ colorScheme: 'dark' }}
+                                  value={row.balsaTipo}
+                                  onChange={(e) => setAiRows(rows => rows.map((r, i) =>
+                                    i === idx ? { ...r, balsaTipo: e.target.value as any } : r
+                                  ))}
+                                >
+                                  <option value="RAKE">RAKE</option>
+                                  <option value="BOX">BOX</option>
+                                  <option value="S/TAG">S/TAG</option>
+                                </select>
+                                {row.balsaTipo !== "S/TAG" && (
+                                  <input
+                                    type="text"
+                                    className="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[9px] text-white focus:outline-none"
+                                    placeholder="Nº"
+                                    value={row.balsaNumero}
+                                    onChange={(e) => setAiRows(rows => rows.map((r, i) =>
+                                      i === idx ? { ...r, balsaNumero: e.target.value } : r
+                                    ))}
+                                  />
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.catalogMatch ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-bold">
+                                  <CheckCircle2 size={9} /> OK
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[8px] font-bold">
+                                  <AlertTriangle size={9} /> Sem match
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() => setAiRows(rows => rows.filter((_, i) => i !== idx))}
+                                className="text-slate-600 hover:text-red-400 p-1 rounded transition-colors"
+                                title="Remover linha"
+                              >
+                                <X size={12} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {aiStep === "reviewing" && (
+              <div className="px-6 py-4 border-t border-white/5 flex justify-end gap-3 shrink-0 bg-[#0f172a]">
+                <button
+                  type="button"
+                  onClick={() => { setAiImportOpen(false); setAiStep("upload"); setAiRows([]); setAiPreviewUrl(null); setAiImageB64(null); }}
+                  className="px-4 py-2.5 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-300 hover:text-white transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={saveBulkRows}
+                  disabled={aiBulkBusy || aiRows.length === 0 || !aiBulkOperadorId}
+                  className="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-black rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center gap-2"
+                >
+                  {aiBulkBusy ? (
+                    <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <><ImagePlus size={14} /> Salvar {aiRows.length} peça(s)</>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
     </div>
   );
 }
