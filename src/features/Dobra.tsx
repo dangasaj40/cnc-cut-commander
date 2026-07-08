@@ -23,6 +23,8 @@ import {
   Moon,
   Package,
   Pencil,
+  Wrench,
+  Settings2,
 } from "lucide-react";
 import {
   BarChart,
@@ -53,6 +55,7 @@ interface Operador {
   id: string;
   nome: string;
   turno: "D" | "N" | null;
+  maquina: "PRENSA" | "DOBRADEIRA" | null;
 }
 
 interface DobraRecord {
@@ -67,6 +70,7 @@ interface DobraRecord {
   operador_id: string | null;
   operador_nome: string | null;
   turno: "D" | "N" | null;
+  maquina: "PRENSA" | "DOBRADEIRA" | null;
   balsa: string | null;
   data: string;
   observacoes: string | null;
@@ -115,6 +119,9 @@ function TurnoBadge({ turno, size = "sm" }: { turno: "D" | "N" | null; size?: "x
 
 export default function DobraPage() {
   const { user, isAdmin, isSupervisor } = useAuth();
+
+  // ── Máquina ativa ──
+  const [maquinaAtiva, setMaquinaAtiva] = useState<"PRENSA" | "DOBRADEIRA">("DOBRADEIRA");
 
   // ── Form state ──
   const [pecaQuery, setPecaQuery] = useState("");
@@ -254,11 +261,12 @@ export default function DobraPage() {
 
   useEffect(() => {
     loadOperadores();
-  }, []);
+    setOperadorId(""); // reset operador ao trocar de máquina
+  }, [maquinaAtiva]);
 
   useEffect(() => {
     loadHistorico();
-  }, [filtroInicio, filtroFim]);
+  }, [filtroInicio, filtroFim, maquinaAtiva]);
 
   // Busca dinâmica de peças — Insert
   useEffect(() => {
@@ -303,8 +311,9 @@ export default function DobraPage() {
   const loadOperadores = async () => {
     const { data: ops } = await supabase
       .from("operadores_dobra")
-      .select("id, nome, turno")
+      .select("id, nome, turno, maquina")
       .eq("ativo", true)
+      .eq("maquina", maquinaAtiva)
       .order("turno")
       .order("nome");
     setOperadores((ops ?? []) as Operador[]);
@@ -315,6 +324,7 @@ export default function DobraPage() {
     let query = supabase
       .from("dobra")
       .select("*")
+      .eq("maquina", maquinaAtiva)
       .order("data", { ascending: false })
       .order("created_at", { ascending: false });
     if (filtroInicio) query = query.gte("data", filtroInicio);
@@ -390,6 +400,7 @@ export default function DobraPage() {
       operador_id: operadorId,
       operador_nome: op?.nome ?? null,
       turno: op?.turno ?? null,
+      maquina: maquinaAtiva,
       balsa: balsaTipo === "S/TAG" ? "S/TAG" : (balsaNumero.trim() ? `${balsaTipo}-${balsaNumero.trim()}` : null),
       data,
       observacoes: observacoes.trim() || null,
@@ -492,6 +503,7 @@ export default function DobraPage() {
         operador_id: editOperadorId,
         operador_nome: op?.nome ?? null,
         turno: op?.turno ?? null,
+        maquina: maquinaAtiva,
         balsa: editBalsaTipo === "S/TAG" ? "S/TAG" : (editBalsaNumero.trim() ? `${editBalsaTipo}-${editBalsaNumero.trim()}` : null),
         data: editData,
         observacoes: editObservacoes.trim() || null,
@@ -545,6 +557,34 @@ export default function DobraPage() {
         title="Dobra de Chapas"
         subtitle="Registro de peças dobradas pelo setor de dobra"
       />
+
+      {/* ── TOGGLE DE MÁQUINA ── */}
+      <div className="glass-card p-2 flex gap-2">
+        <button
+          type="button"
+          onClick={() => setMaquinaAtiva("DOBRADEIRA")}
+          className="flex-1 flex items-center justify-center gap-2.5 py-3 px-5 rounded-xl text-sm font-black uppercase tracking-widest transition-all duration-200"
+          style={maquinaAtiva === "DOBRADEIRA"
+            ? { background: MAQUINA.DOBRADEIRA.bg, color: MAQUINA.DOBRADEIRA.color, border: `1.5px solid ${MAQUINA.DOBRADEIRA.border}`, boxShadow: `0 0 16px ${MAQUINA.DOBRADEIRA.bg}` }
+            : { background: "transparent", color: "#64748b", border: "1.5px solid transparent" }
+          }
+        >
+          <Settings2 size={16} />
+          Dobradeira
+        </button>
+        <button
+          type="button"
+          onClick={() => setMaquinaAtiva("PRENSA")}
+          className="flex-1 flex items-center justify-center gap-2.5 py-3 px-5 rounded-xl text-sm font-black uppercase tracking-widest transition-all duration-200"
+          style={maquinaAtiva === "PRENSA"
+            ? { background: MAQUINA.PRENSA.bg, color: MAQUINA.PRENSA.color, border: `1.5px solid ${MAQUINA.PRENSA.border}`, boxShadow: `0 0 16px ${MAQUINA.PRENSA.bg}` }
+            : { background: "transparent", color: "#64748b", border: "1.5px solid transparent" }
+          }
+        >
+          <Wrench size={16} />
+          Prensa
+        </button>
+      </div>
 
       {/* ── FORMULÁRIO ── */}
       <form onSubmit={handleSave} className="glass-card p-6 space-y-6">
@@ -1162,6 +1202,14 @@ export default function DobraPage() {
         <div className="px-6 py-5 border-b border-white/5 flex items-center gap-3 flex-wrap">
           <Layers size={16} className="text-amber-400" />
           <h2 className="text-[10px] font-bold uppercase tracking-[0.2em]">Histórico de Dobras</h2>
+          {/* Badge da máquina ativa */}
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black"
+            style={{ background: MAQUINA[maquinaAtiva].bg, color: MAQUINA[maquinaAtiva].color, border: `1px solid ${MAQUINA[maquinaAtiva].border}` }}
+          >
+            {maquinaAtiva === "PRENSA" ? <Wrench size={9} /> : <Settings2 size={9} />}
+            {MAQUINA[maquinaAtiva].label}
+          </span>
           {filtroTurno && <TurnoBadge turno={filtroTurno} size="xs" />}
           <span className="ml-auto text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
             {historicoFiltrado.length} registro{historicoFiltrado.length !== 1 ? "s" : ""}

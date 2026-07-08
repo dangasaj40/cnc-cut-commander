@@ -25,7 +25,9 @@ import {
   ToggleRight,
   Trash2,
   Sun,
-  Moon
+  Moon,
+  Wrench,
+  Settings2
 } from "lucide-react";
 
 function ParameterList({ title, paramKey }: { title: string, paramKey: string }) {
@@ -94,11 +96,16 @@ function ParameterList({ title, paramKey }: { title: string, paramKey: string })
 }
 
 // ─── Operadores Dobra Panel ───────────────────────────────────────────────────
-interface OpDobra { id: string; nome: string; ativo: boolean; turno: "D" | "N" | null; }
+interface OpDobra { id: string; nome: string; ativo: boolean; turno: "D" | "N" | null; maquina: "PRENSA" | "DOBRADEIRA" | null; }
 
 const TURNO_CFG = {
   D: { label: "Diurno",  color: "#f59e0b", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)" },
   N: { label: "Noturno", color: "#3b82f6", bg: "rgba(59,130,246,0.12)",  border: "rgba(59,130,246,0.3)" },
+};
+
+const MAQUINA_CFG = {
+  DOBRADEIRA: { label: "Dobradeira", color: "#10b981", bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.3)" },
+  PRENSA:     { label: "Prensa",     color: "#8b5cf6", bg: "rgba(139,92,246,0.12)",  border: "rgba(139,92,246,0.3)" },
 };
 
 function TurnoPill({ turno }: { turno: "D" | "N" | null }) {
@@ -119,11 +126,30 @@ function TurnoPill({ turno }: { turno: "D" | "N" | null }) {
   );
 }
 
+function MaquinaPill({ maquina }: { maquina: "PRENSA" | "DOBRADEIRA" | null }) {
+  if (!maquina) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border border-dashed border-slate-500/40 text-slate-500">
+      Sem máquina
+    </span>
+  );
+  const m = MAQUINA_CFG[maquina];
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black"
+      style={{ background: m.bg, color: m.color, border: `1px solid ${m.border}` }}
+    >
+      {maquina === "PRENSA" ? <Wrench size={10} /> : <Settings2 size={10} />}
+      {m.label}
+    </span>
+  );
+}
+
 function OperadoresDobraPanel() {
   const [lista, setLista] = useState<OpDobra[]>([]);
   const [loading, setLoading] = useState(true);
   const [novoNome, setNovoNome] = useState("");
   const [novoTurno, setNovoTurno] = useState<"D" | "N">("D");
+  const [novaMaquina, setNovaMaquina] = useState<"PRENSA" | "DOBRADEIRA">("DOBRADEIRA");
   const [salvando, setSalvando] = useState(false);
   const [busca, setBusca] = useState("");
 
@@ -131,7 +157,8 @@ function OperadoresDobraPanel() {
     setLoading(true);
     const { data } = await supabase
       .from("operadores_dobra")
-      .select("id, nome, ativo, turno")
+      .select("id, nome, ativo, turno, maquina")
+      .order("maquina")
       .order("turno")
       .order("nome");
     setLista((data ?? []) as OpDobra[]);
@@ -148,7 +175,7 @@ function OperadoresDobraPanel() {
       return;
     }
     setSalvando(true);
-    await supabase.from("operadores_dobra").insert({ nome, turno: novoTurno });
+    await supabase.from("operadores_dobra").insert({ nome, turno: novoTurno, maquina: novaMaquina });
     setNovoNome("");
     await load();
     setSalvando(false);
@@ -163,6 +190,12 @@ function OperadoresDobraPanel() {
     const novoTurnoOp: "D" | "N" = op.turno === "D" ? "N" : "D";
     await supabase.from("operadores_dobra").update({ turno: novoTurnoOp }).eq("id", op.id);
     setLista(l => l.map(o => o.id === op.id ? { ...o, turno: novoTurnoOp } : o));
+  };
+
+  const toggleMaquina = async (op: OpDobra) => {
+    const nova: "PRENSA" | "DOBRADEIRA" = op.maquina === "PRENSA" ? "DOBRADEIRA" : "PRENSA";
+    await supabase.from("operadores_dobra").update({ maquina: nova }).eq("id", op.id);
+    setLista(l => l.map(o => o.id === op.id ? { ...o, maquina: nova } : o));
   };
 
   const excluir = async (op: OpDobra) => {
@@ -229,6 +262,35 @@ function OperadoresDobraPanel() {
             </div>
           </div>
 
+          {/* Máquina selector */}
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Máquina</label>
+            <div className="flex rounded-xl overflow-hidden border border-white/10">
+              <button
+                type="button"
+                onClick={() => setNovaMaquina("DOBRADEIRA")}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all"
+                style={novaMaquina === "DOBRADEIRA"
+                  ? { background: MAQUINA_CFG.DOBRADEIRA.bg, color: MAQUINA_CFG.DOBRADEIRA.color, borderRight: `1px solid ${MAQUINA_CFG.DOBRADEIRA.border}` }
+                  : { background: "transparent", color: "#64748b" }
+                }
+              >
+                <Settings2 size={12} /> Dobradeira
+              </button>
+              <button
+                type="button"
+                onClick={() => setNovaMaquina("PRENSA")}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all"
+                style={novaMaquina === "PRENSA"
+                  ? { background: MAQUINA_CFG.PRENSA.bg, color: MAQUINA_CFG.PRENSA.color }
+                  : { background: "transparent", color: "#64748b" }
+                }
+              >
+                <Wrench size={12} /> Prensa
+              </button>
+            </div>
+          </div>
+
           {/* Botão Adicionar */}
           <button
             onClick={adicionar}
@@ -264,7 +326,7 @@ function OperadoresDobraPanel() {
         </div>
 
         {/* Legenda */}
-        <div className="px-6 py-2 border-b border-white/5 flex items-center gap-4 bg-white/[0.01]">
+        <div className="px-6 py-2 border-b border-white/5 flex items-center gap-4 flex-wrap bg-white/[0.01]">
           <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Turno:</span>
           <span className="flex items-center gap-1 text-[9px] font-bold" style={{ color: TURNO_CFG.D.color }}>
             <Sun size={10} /> Diurno
@@ -272,8 +334,16 @@ function OperadoresDobraPanel() {
           <span className="flex items-center gap-1 text-[9px] font-bold" style={{ color: TURNO_CFG.N.color }}>
             <Moon size={10} /> Noturno
           </span>
+          <span className="mx-2 text-white/10">|</span>
+          <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Máquina:</span>
+          <span className="flex items-center gap-1 text-[9px] font-bold" style={{ color: MAQUINA_CFG.DOBRADEIRA.color }}>
+            <Settings2 size={10} /> Dobradeira
+          </span>
+          <span className="flex items-center gap-1 text-[9px] font-bold" style={{ color: MAQUINA_CFG.PRENSA.color }}>
+            <Wrench size={10} /> Prensa
+          </span>
           <span className="text-[8px] text-muted-foreground ml-auto">
-            Clique no badge de turno para alternar
+            Clique nos badges para alternar
           </span>
         </div>
 
@@ -296,7 +366,7 @@ function OperadoresDobraPanel() {
                   <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Ativos</span>
                 </div>
                 {ativos.map(op => (
-                  <div key={op.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] group transition-colors">
+                  <div key={op.id} className="flex items-center gap-3 px-6 py-3.5 hover:bg-white/[0.02] group transition-colors flex-wrap">
                     {/* Avatar */}
                     <div className="size-8 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-[10px] font-black text-amber-400 shrink-0">
                       {op.nome.charAt(0)}
@@ -304,6 +374,15 @@ function OperadoresDobraPanel() {
 
                     {/* Nome */}
                     <span className="text-sm font-bold flex-1">{op.nome}</span>
+
+                    {/* Badge máquina clicável */}
+                    <button
+                      onClick={() => toggleMaquina(op)}
+                      title={`Máquina: ${op.maquina ?? "Não definida"} — clique para alternar`}
+                      className="transition-transform hover:scale-105 active:scale-95"
+                    >
+                      <MaquinaPill maquina={op.maquina ?? null} />
+                    </button>
 
                     {/* Badge turno clicável */}
                     <button
@@ -343,11 +422,20 @@ function OperadoresDobraPanel() {
                   <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Inativos</span>
                 </div>
                 {inativos.map(op => (
-                  <div key={op.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] group transition-colors opacity-50">
+                  <div key={op.id} className="flex items-center gap-3 px-6 py-3.5 hover:bg-white/[0.02] group transition-colors opacity-50 flex-wrap">
                     <div className="size-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-black text-muted-foreground shrink-0">
                       {op.nome.charAt(0)}
                     </div>
                     <span className="text-sm font-medium flex-1">{op.nome}</span>
+
+                    {/* Badge máquina clicável mesmo inativo */}
+                    <button
+                      onClick={() => toggleMaquina(op)}
+                      title="Alternar máquina"
+                      className="transition-transform hover:scale-105 active:scale-95"
+                    >
+                      <MaquinaPill maquina={op.maquina ?? null} />
+                    </button>
 
                     {/* Badge turno clicável mesmo inativo */}
                     <button
