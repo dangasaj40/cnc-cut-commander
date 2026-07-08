@@ -29,6 +29,7 @@ import {
   History,
   AlertTriangle,
   Sparkles,
+  Share2,
   Camera,
   ImagePlus,
   CheckCircle2,
@@ -252,6 +253,7 @@ export default function DobraPage() {
   const [aiBulkOperadorId, setAiBulkOperadorId] = useState("");
   const [aiBulkData, setAiBulkData] = useState(today());
   const [aiBulkBusy, setAiBulkBusy] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
 
   // ─────────────────────────────────────────────
   // Computed: filtered records + stats
@@ -616,6 +618,21 @@ export default function DobraPage() {
   // ─────────────────────────────────────────────
   // AI Bulk Import handlers
   // ─────────────────────────────────────────────
+
+  const handleShare = () => {
+    const base = window.location.origin;
+    const params = new URLSearchParams({
+      from: filtroInicio,
+      to: filtroFim,
+      maquina: maquinaAtiva,
+      ...(filtroTurno ? { turno: filtroTurno } : {}),
+    });
+    const url = `${base}/shared/dobra?${params.toString()}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    });
+  };
 
   const handleAiImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1047,7 +1064,21 @@ Se não encontrar nada legível, retorne: []`;
         </button>
       </div>
 
-      {/* ── FORMULÁRIO ── */}
+      {/* ── BOTÃO COMPARTILHAR ── */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleShare}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest border transition-all ${
+            shareCopied
+              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+              : "border-white/10 text-slate-400 hover:text-white hover:border-white/20"
+          }`}
+        >
+          <Share2 size={13} />
+          {shareCopied ? "Link copiado!" : "Compartilhar Relatório"}
+        </button>
+      </div>
       <form onSubmit={handleSave} className="glass-card p-6 space-y-6">
         <div className="flex items-center gap-3 text-amber-400 mb-2">
           <Hammer size={18} />

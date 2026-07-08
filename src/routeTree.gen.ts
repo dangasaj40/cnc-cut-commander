@@ -22,6 +22,7 @@ import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as CatalogoRouteImport } from './routes/catalogo'
 import { Route as BalsasRouteImport } from './routes/balsas'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SharedDobraRouteImport } from './routes/shared/dobra'
 
 const UsuariosRoute = UsuariosRouteImport.update({
   id: '/usuarios',
@@ -88,6 +89,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SharedDobraRoute = SharedDobraRouteImport.update({
+  id: '/shared/dobra',
+  path: '/shared/dobra',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -103,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/retorno': typeof RetornoRoute
   '/usuarios': typeof UsuariosRoute
+  '/shared/dobra': typeof SharedDobraRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/retorno': typeof RetornoRoute
   '/usuarios': typeof UsuariosRoute
+  '/shared/dobra': typeof SharedDobraRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -134,6 +142,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/retorno': typeof RetornoRoute
   '/usuarios': typeof UsuariosRoute
+  '/shared/dobra': typeof SharedDobraRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -151,6 +160,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/retorno'
     | '/usuarios'
+    | '/shared/dobra'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -166,6 +176,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/retorno'
     | '/usuarios'
+    | '/shared/dobra'
   id:
     | '__root__'
     | '/'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/retorno'
     | '/usuarios'
+    | '/shared/dobra'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -197,6 +209,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   RetornoRoute: typeof RetornoRoute
   UsuariosRoute: typeof UsuariosRoute
+  SharedDobraRoute: typeof SharedDobraRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -292,6 +305,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shared/dobra': {
+      id: '/shared/dobra'
+      path: '/shared/dobra'
+      fullPath: '/shared/dobra'
+      preLoaderRoute: typeof SharedDobraRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -309,6 +329,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   RetornoRoute: RetornoRoute,
   UsuariosRoute: UsuariosRoute,
+  SharedDobraRoute: SharedDobraRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -31,7 +31,7 @@ function RootComponent() {
     );
   }
 
-  const isAuthPage = path === "/login" || path === "/reset-password";
+  const isAuthPage = path === "/login" || path === "/reset-password" || path.startsWith("/shared/");
 
   if (!user && !isAuthPage) {
     return <Navigate to="/login" />;
