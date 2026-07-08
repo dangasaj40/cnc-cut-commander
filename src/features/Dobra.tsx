@@ -77,6 +77,20 @@ interface DobraRecord {
   created_at: string;
 }
 
+interface ParadaDobra {
+  id: string;
+  maquina: "PRENSA" | "DOBRADEIRA";
+  operador_id: string | null;
+  operador_nome: string;
+  motivo: string;
+  data_inicio: string;
+  data_fim: string | null;
+  duracao_minutos: number;
+  observacao: string | null;
+  status: "Em aberto" | "Finalizada";
+  created_at: string;
+}
+
 // ─── Date Helpers ─────────────────────────────────────────────────────────────
 
 const today = () => new Date().toISOString().split("T")[0];
@@ -178,6 +192,28 @@ export default function DobraPage() {
   const [historico, setHistorico] = useState<DobraRecord[]>([]);
   const [loadingHist, setLoadingHist] = useState(false);
 
+  // ── Downtime/Paradas state ──
+  const [paradas, setParadas] = useState<ParadaDobra[]>([]);
+  const [loadingParadas, setLoadingParadas] = useState(false);
+  const [activeStop, setActiveStop] = useState<ParadaDobra | null>(null);
+  const [motivosParada, setMotivosParada] = useState<string[]>([]);
+  
+  // Parada inline form
+  const [opParadaId, setOpParadaId] = useState("");
+  const [motivoParada, setMotivoParada] = useState("");
+  const [obsParada, setObsParada] = useState("");
+  const [busyParada, setBusyParada] = useState(false);
+
+  // Parada manual form
+  const [manualParadaOpen, setManualParadaOpen] = useState(false);
+  const [manData, setManData] = useState(today());
+  const [manHoraInicio, setManHoraInicio] = useState("");
+  const [manHoraFim, setManHoraFim] = useState("");
+  const [manOpId, setManOpId] = useState("");
+  const [manMotivo, setManMotivo] = useState("");
+  const [manObs, setManObs] = useState("");
+  const [busyManParada, setBusyManParada] = useState(false);
+
   // ─────────────────────────────────────────────
   // Computed: filtered records + stats
   // ─────────────────────────────────────────────
@@ -273,10 +309,13 @@ export default function DobraPage() {
   useEffect(() => {
     loadOperadores();
     setOperadorId(""); // reset operador ao trocar de máquina
+    loadParadas();
+    fetchMotivos();
   }, [maquinaAtiva]);
 
   useEffect(() => {
     loadHistorico();
+    loadParadas();
   }, [filtroInicio, filtroFim, maquinaAtiva]);
 
   // Busca dinâmica de peças — Insert
@@ -343,6 +382,196 @@ export default function DobraPage() {
     const { data: hist } = await query;
     setHistorico((hist ?? []) as DobraRecord[]);
     setLoadingHist(false);
+  };
+
+  const fetchMotivos = async () => {
+    try {
+      const { data } = await supabase.from("system_settings").select("value").eq("key", "motivos_parada").maybeSingle();
+      if (data?.value) {
+        setMotivosParada(JSON.parse(data.value));
+      } else {
+        setMotivosParada([
+          "MANUTENÇÃO PREVENTIVA",
+          "MANUTENÇÃO CORRETIVA",
+          "AJUSTE DE MÁQUINA",
+          "AGUARDANDO MATERIAL",
+          "SEM OPERADOR",
+          "LIMPEZA",
+          "OUTROS"
+        ]);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadParadas = async () => {
+    setLoadingParadas(true);
+    try {
+      // 1. Carrega parada em aberto para a máquina selecionada
+      const { data: active } = await supabase
+        .from("paradas_dobra")
+        .select("*")
+        .eq("maquina", maquinaAtiva)
+        .eq("status", "Em aberto")
+        .maybeSingle();
+      
+      setActiveStop(active as ParadaDobra | null);
+
+      // 2. Carrega histórico de paradas no período
+      let query = supabase
+        .from("paradas_dobra")
+        .select("*")
+        .eq("maquina", maquinaAtiva)
+        .order("data_inicio", { ascending: false });
+
+      if (filtroInicio) {
+        // Converte data simples yyyy-MM-dd para timestamp do início do dia
+        query = query.gte("data_inicio", `${filtroInicio}T00:00:00Z`);
+      }
+      if (filtroFim) {
+        // Converte data simples yyyy-MM-dd para timestamp do fim do dia
+        query = query.lte("data_inicio", `${filtroFim}T23:59:59Z`);
+      }
+
+      const { data: list } = await query;
+      setParadas((list ?? []) as ParadaDobra[]);
+    } catch (err) {
+      console.error("Erro ao carregar paradas:", err);
+    } finally {
+      setLoadingParadas(false);
+    }
+  };
+
+  const startParada = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!opParadaId || !motivoParada) {
+      alert("Selecione o operador e o motivo da parada.");
+      return;
+    }
+    setBusyParada(true);
+    try {
+      const op = operadores.find(o => o.id === opParadaId);
+      const { error } = await supabase.from("paradas_dobra").insert({
+        maquina: maquinaAtiva,
+        operador_id: opParadaId,
+        operador_nome: op?.nome ?? "Sem nome",
+        motivo: motivoParada,
+        status: "Em aberto",
+        data_inicio: new Date().toISOString(),
+        observacao: obsParada.trim() || null,
+        criado_por: user?.id
+      });
+      if (error) throw error;
+      
+      setOpParadaId("");
+      setMotivoParada("");
+      setObsParada("");
+      await loadParadas();
+    } catch (err: any) {
+      alert("Erro ao iniciar parada: " + err.message);
+    } finally {
+      setBusyParada(false);
+    }
+  };
+
+  const finishParada = async (id: string) => {
+    setBusyParada(true);
+    try {
+      // Carrega o registro para calcular a duração
+      const { data: record } = await supabase
+        .from("paradas_dobra")
+        .select("data_inicio")
+        .eq("id", id)
+        .single();
+      
+      if (!record) return;
+
+      const dataFim = new Date();
+      const diffMs = dataFim.getTime() - new Date(record.data_inicio).getTime();
+      const duracaoMinutos = Math.max(1, Math.round(diffMs / (1000 * 60)));
+
+      const { error } = await supabase
+        .from("paradas_dobra")
+        .update({
+          status: "Finalizada",
+          data_fim: dataFim.toISOString(),
+          duracao_minutos: duracaoMinutos,
+          observacao: obsParada.trim() ? obsParada.trim() : undefined
+        })
+        .eq("id", id);
+      
+      if (error) throw error;
+      
+      setObsParada("");
+      await loadParadas();
+    } catch (err: any) {
+      alert("Erro ao finalizar parada: " + err.message);
+    } finally {
+      setBusyParada(false);
+    }
+  };
+
+  const saveManualParada = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manOpId || !manMotivo || !manHoraInicio || !manHoraFim) {
+      alert("Preencha todos os campos obrigatórios.");
+      return;
+    }
+    setBusyManParada(true);
+    try {
+      const dataInicio = new Date(`${manData}T${manHoraInicio}:00`);
+      const dataFim = new Date(`${manData}T${manHoraFim}:00`);
+      
+      let diffMs = dataFim.getTime() - dataInicio.getTime();
+      if (diffMs < 0) diffMs += 24 * 60 * 60 * 1000; // virada de dia
+
+      const duracaoMinutos = Math.round(diffMs / (1000 * 60));
+      const op = operadores.find(o => o.id === manOpId);
+
+      const { error } = await supabase.from("paradas_dobra").insert({
+        maquina: maquinaAtiva,
+        operador_id: manOpId,
+        operador_nome: op?.nome ?? "Sem nome",
+        motivo: manMotivo,
+        data_inicio: dataInicio.toISOString(),
+        data_fim: dataFim.toISOString(),
+        duracao_minutos: duracaoMinutos,
+        observacao: manObs.trim() || null,
+        status: "Finalizada",
+        criado_por: user?.id
+      });
+
+      if (error) throw error;
+      
+      setManOpId("");
+      setManMotivo("");
+      setManHoraInicio("");
+      setManHoraFim("");
+      setManObs("");
+      setManualParadaOpen(false);
+      await loadParadas();
+    } catch (err: any) {
+      alert("Erro ao registrar parada manual: " + err.message);
+    } finally {
+      setBusyManParada(false);
+    }
+  };
+
+  const deleteParada = async (id: string) => {
+    if (!isAdmin && !isSupervisor) {
+      alert("Apenas administradores ou supervisores podem excluir paradas.");
+      return;
+    }
+    if (!confirm("Excluir este registro de parada?")) return;
+
+    try {
+      const { error } = await supabase.from("paradas_dobra").delete().eq("id", id);
+      if (error) throw error;
+      await loadParadas();
+    } catch (err: any) {
+      alert("Erro ao excluir: " + err.message);
+    }
   };
 
   // ─────────────────────────────────────────────
@@ -848,6 +1077,314 @@ export default function DobraPage() {
           )}
         </button>
       </form>
+
+      {/* ── SEÇÃO DE CONTROLE DE PARADAS ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Card 1: Status / Controle de Parada Ativa */}
+        <div className="glass-card p-6 flex flex-col justify-between text-left">
+          <div>
+            <div className="flex items-center gap-3 text-red-500 mb-4">
+              <Activity size={18} className={activeStop ? "animate-pulse" : ""} />
+              <h2 className="text-[10px] font-bold uppercase tracking-[0.2em]">
+                Controle de Parada ({MAQUINA[maquinaAtiva].label})
+              </h2>
+            </div>
+
+            {activeStop ? (
+              /* MÁQUINA ATUALMENTE PARADA */
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
+                  <AlertTriangle className="text-red-500 shrink-0 animate-bounce mt-0.5" size={18} />
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-black uppercase text-red-400">Máquina Parada</h4>
+                    <p className="text-[11px] text-slate-300">
+                      Motivo: <strong className="text-white">{activeStop.motivo}</strong>
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Operador: {activeStop.operador_nome} · Iniciado em: {new Date(activeStop.data_inicio).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                    {activeStop.observacao && (
+                      <p className="text-[10px] text-slate-400 italic">" {activeStop.observacao} "</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Observação de Retorno</label>
+                  <input
+                    type="text"
+                    className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                    placeholder="Opcional: Detalhes sobre a manutenção/retorno..."
+                    value={obsParada}
+                    onChange={(e) => setObsParada(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => finishParada(activeStop.id)}
+                  disabled={busyParada}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+                >
+                  {busyParada ? (
+                    <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>Finalizar Parada / Retornar Máquina</>
+                  )}
+                </button>
+              </div>
+            ) : (
+              /* MÁQUINA EM OPERAÇÃO (INICIAR PARADA) */
+              <form onSubmit={startParada} className="space-y-4">
+                <p className="text-xs text-slate-500">
+                  A máquina está ativa. Se precisar parar para manutenção, limpeza ou troca de ferramentas, registre abaixo para cronometrar a duração.
+                </p>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Operador</label>
+                    <select
+                      className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                      style={{ colorScheme: 'dark' }}
+                      value={opParadaId}
+                      onChange={(e) => setOpParadaId(e.target.value)}
+                    >
+                      <option value="" style={{ background: '#1E293B' }}>Selecionar...</option>
+                      {operadores.map((o) => (
+                        <option key={o.id} value={o.id} style={{ background: '#1E293B' }}>{o.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Motivo</label>
+                    <select
+                      className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                      style={{ colorScheme: 'dark' }}
+                      value={motivoParada}
+                      onChange={(e) => setMotivoParada(e.target.value)}
+                    >
+                      <option value="" style={{ background: '#1E293B' }}>Selecionar...</option>
+                      {motivosParada.map((m) => (
+                        <option key={m} value={m} style={{ background: '#1E293B' }}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Observação Inicial</label>
+                  <input
+                    type="text"
+                    className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                    placeholder="Opcional: Descreva o problema ou ação..."
+                    value={obsParada}
+                    onChange={(e) => setObsParada(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={busyParada}
+                  className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+                >
+                  {busyParada ? (
+                    <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>Parar Máquina Agora</>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        {/* Card 2: Histórico de Paradas do Período */}
+        <div className="glass-card p-6 flex flex-col justify-between min-h-[300px]">
+          <div>
+            <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
+              <div className="flex items-center gap-3 text-slate-400">
+                <History size={16} />
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em]">Histórico de Paradas ({MAQUINA[maquinaAtiva].label})</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualParadaOpen(true)}
+                className="text-[9px] font-black uppercase tracking-widest text-amber-500 hover:text-amber-400 flex items-center gap-1"
+              >
+                <PlusCircle size={12} /> Lançar Parada Manual
+              </button>
+            </div>
+
+            {loadingParadas ? (
+              <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
+                <div className="size-5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+                <span className="text-xs uppercase tracking-widest font-bold">Carregando...</span>
+              </div>
+            ) : paradas.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Activity size={24} className="opacity-20 mb-2" />
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Sem paradas registradas</span>
+              </div>
+            ) : (
+              <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1 text-left">
+                {paradas.map((p) => (
+                  <div key={p.id} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-black text-slate-100 uppercase tracking-widest">{p.motivo}</span>
+                        {p.status === "Em aberto" ? (
+                          <span className="px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full text-[8px] font-bold uppercase">Em aberto</span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-full text-[8px] font-mono text-slate-400">{p.duracao_minutos} min</span>
+                        )}
+                      </div>
+                      <div className="text-[9px] text-muted-foreground">
+                        {p.operador_nome} · {new Date(p.data_inicio).toLocaleDateString("pt-BR")} às {new Date(p.data_inicio).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      {p.observacao && <p className="text-[9px] text-muted-foreground italic truncate max-w-[280px]">"{p.observacao}"</p>}
+                    </div>
+
+                    {(isAdmin || isSupervisor) && (
+                      <button
+                        onClick={() => deleteParada(p.id)}
+                        className="text-muted-foreground hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10 transition-colors shrink-0 ml-auto"
+                        title="Excluir Parada"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── MODAL PARADA MANUAL (PORTAL) ── */}
+      {manualParadaOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setManualParadaOpen(false); }}
+        >
+          <div className="bg-[#1E293B] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl p-6 relative flex flex-col gap-5 text-slate-100">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2.5 text-amber-400">
+                <PlusCircle size={16} />
+                <h3 className="text-xs font-bold uppercase tracking-widest">Lançar Parada Manual</h3>
+              </div>
+              <button
+                onClick={() => setManualParadaOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={saveManualParada} className="space-y-4 text-left">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Data</label>
+                <input
+                  type="date"
+                  className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                  value={manData}
+                  onChange={(e) => setManData(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Hora Início</label>
+                  <input
+                    type="time"
+                    className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                    value={manHoraInicio}
+                    onChange={(e) => setManHoraInicio(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Hora Fim</label>
+                  <input
+                    type="time"
+                    className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                    value={manHoraFim}
+                    onChange={(e) => setManHoraFim(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Operador</label>
+                <select
+                  className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                  style={{ colorScheme: 'dark' }}
+                  value={manOpId}
+                  onChange={(e) => setManOpId(e.target.value)}
+                  required
+                >
+                  <option value="" style={{ background: '#1E293B' }}>Selecionar...</option>
+                  {operadores.map((o) => (
+                    <option key={o.id} value={o.id} style={{ background: '#1E293B' }}>{o.nome}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Motivo</label>
+                <select
+                  className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
+                  style={{ colorScheme: 'dark' }}
+                  value={manMotivo}
+                  onChange={(e) => setManMotivo(e.target.value)}
+                  required
+                >
+                  <option value="" style={{ background: '#1E293B' }}>Selecionar...</option>
+                  {motivosParada.map((m) => (
+                    <option key={m} value={m} style={{ background: '#1E293B' }}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Observações / Detalhes</label>
+                <textarea
+                  className="field text-xs py-2 bg-slate-900 border-white/10 text-white h-20 resize-none rounded-xl"
+                  placeholder="Descreva detalhes adicionais..."
+                  value={manObs}
+                  onChange={(e) => setManObs(e.target.value)}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setManualParadaOpen(false)}
+                  className="px-4 py-2 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-300 hover:text-white transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={busyManParada}
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5"
+                >
+                  {busyManParada ? (
+                    <div className="size-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
+                  ) : (
+                    "Registrar"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ── FILTROS E ANÁLISE ── */}
       <div className="space-y-6">
