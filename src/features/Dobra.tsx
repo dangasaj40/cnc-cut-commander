@@ -25,6 +25,9 @@ import {
   Pencil,
   Wrench,
   Settings2,
+  Activity,
+  History,
+  AlertTriangle,
 } from "lucide-react";
 import {
   BarChart,
