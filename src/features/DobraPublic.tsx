@@ -212,45 +212,47 @@ export default function DobraPublic() {
         {/* ── Filters ── */}
         <div className="glass-card p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Filter size={13} className="text-slate-400" />
-            <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Filtros</span>
+            <Filter size={13} className="text-slate-300" />
+            <span className="text-[9px] font-bold uppercase tracking-widest text-slate-300">Filtros</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">De</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-300">De</label>
               <input
                 type="date"
-                className="field text-xs py-2 bg-white/5 border-white/10 text-white w-full"
+                className="w-full rounded-xl px-3 py-2 text-xs font-medium text-white bg-slate-800 border border-slate-600 focus:outline-none focus:border-slate-400 transition-colors"
+                style={{ colorScheme: "dark" }}
                 value={filtroInicio}
                 onChange={(e) => setFiltroInicio(e.target.value)}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Até</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-300">Até</label>
               <input
                 type="date"
-                className="field text-xs py-2 bg-white/5 border-white/10 text-white w-full"
+                className="w-full rounded-xl px-3 py-2 text-xs font-medium text-white bg-slate-800 border border-slate-600 focus:outline-none focus:border-slate-400 transition-colors"
+                style={{ colorScheme: "dark" }}
                 value={filtroFim}
                 onChange={(e) => setFiltroFim(e.target.value)}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Turno</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-300">Turno</label>
               <select
-                className="field text-xs py-2 bg-[#0f172a] border-white/10 text-white w-full"
+                className="w-full rounded-xl px-3 py-2 text-xs font-medium text-white bg-slate-800 border border-slate-600 focus:outline-none focus:border-slate-400 transition-colors"
                 style={{ colorScheme: "dark" }}
                 value={filtroTurno}
                 onChange={(e) => setFiltroTurno(e.target.value as "" | "D" | "N")}
               >
-                <option value="">Todos</option>
-                <option value="D">Diurno (D)</option>
-                <option value="N">Noturno (N)</option>
+                <option value="" style={{ background: "#1e293b" }}>Todos os turnos</option>
+                <option value="D" style={{ background: "#1e293b" }}>Diurno (D)</option>
+                <option value="N" style={{ background: "#1e293b" }}>Noturno (N)</option>
               </select>
             </div>
             <div className="flex items-end">
               <button
                 onClick={() => { setFiltroInicio(firstOfMonth()); setFiltroFim(lastOfMonth()); setFiltroTurno(""); }}
-                className="w-full py-2 border border-white/10 rounded-xl text-[9px] font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
+                className="w-full py-2 bg-slate-800 border border-slate-600 rounded-xl text-[9px] font-bold uppercase tracking-widest text-slate-200 hover:text-white hover:bg-slate-700 transition-colors"
               >
                 Mês atual
               </button>
