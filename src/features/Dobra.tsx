@@ -94,12 +94,20 @@ const calcPrevMonth = () => {
   return { inicio: firstOfMonth(d), fim: lastOfMonth(d) };
 };
 
+// ─── Machine constants ────────────────────────────────────────────────────────
+
+const MAQUINA = {
+  DOBRADEIRA: { label: "Dobradeira", color: "#10b981", bg: "rgba(16,185,129,0.15)", border: "rgba(16,185,129,0.35)" },
+  PRENSA:     { label: "Prensa",     color: "#8b5cf6", bg: "rgba(139,92,246,0.15)",  border: "rgba(139,92,246,0.35)" },
+};
+
 // ─── Turno helpers ────────────────────────────────────────────────────────────
 
 const TURNO = {
   D: { label: "Diurno", color: "#f59e0b", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.25)" },
   N: { label: "Noturno", color: "#3b82f6", bg: "rgba(59,130,246,0.12)", border: "rgba(59,130,246,0.25)" },
 };
+
 
 function TurnoBadge({ turno, size = "sm" }: { turno: "D" | "N" | null; size?: "xs" | "sm" }) {
   if (!turno) return <span className="text-muted-foreground">—</span>;
@@ -240,7 +248,10 @@ export default function DobraPage() {
       .sort((a, b) => b.qtd - a.qtd)
       .slice(0, 15); // máx 15 balsas
 
-    return { total, statD, statN, chartDia, chartOp, chartBalsa };
+    const diasAtivos = Object.keys(diaMap).length;
+    const mediaTonsDia = diasAtivos > 0 ? total.tons / diasAtivos : 0;
+
+    return { total, statD, statN, chartDia, chartOp, chartBalsa, mediaTonsDia, diasAtivos };
   }, [historico, historicoFiltrado]);
 
   // ─────────────────────────────────────────────
@@ -938,7 +949,7 @@ export default function DobraPage() {
 
         {/* ── KPIs ── */}
         {/* Linha 1: KPIs totais (filtrados pelo turno selecionado) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="glass-card p-5 flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Volume Dobrado</span>
@@ -954,13 +965,26 @@ export default function DobraPage() {
 
           <div className="glass-card p-5 flex items-center justify-between">
             <div className="space-y-1">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Média por Dia</span>
+              <div className="text-2xl font-black text-slate-900">{stats.mediaTonsDia.toFixed(3)}t</div>
+              <span className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">
+                Em {stats.diasAtivos} dia{stats.diasAtivos !== 1 ? "s" : ""} ativo{stats.diasAtivos !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="size-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+              <TrendingUp size={20} />
+            </div>
+          </div>
+
+          <div className="glass-card p-5 flex items-center justify-between">
+            <div className="space-y-1">
               <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Peças Processadas</span>
               <div className="text-2xl font-black text-slate-900">{stats.total.pecas} un</div>
               <span className="text-[8px] font-bold text-amber-600 uppercase tracking-widest">
                 {filtroTurno ? TURNO[filtroTurno].label : "Todos os turnos"}
               </span>
             </div>
-            <div className="size-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <div className="size-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-450 text-amber-400">
               <Layers size={20} />
             </div>
           </div>
