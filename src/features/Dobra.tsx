@@ -238,6 +238,8 @@ export default function DobraPage() {
     catalogMatch: boolean;
     balsaTipo: "RAKE" | "BOX" | "S/TAG";
     balsaNumero: string;
+    aiOperadorNome: string | null; // nome do operador lido pela IA (para sugestão)
+    aiData: string | null;         // data lida pela IA (para sugestão)
   }
   const [aiImportOpen, setAiImportOpen] = useState(false);
   const aiFileRef = useRef<HTMLInputElement>(null);
@@ -646,19 +648,30 @@ export default function DobraPage() {
       const { GoogleGenerativeAI } = await getGemini();
       const genAI = new GoogleGenerativeAI(apiKey.trim());
 
-      const modelsToTry = ["gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-2.0-flash"];
-      const prompt = `Você é um especialista em leitura de documentos industriais de CNC e corte de chapas metálicas.
-Analise esta imagem de uma lista de peças processadas e extraia todos os itens encontrados.
+      const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-lite"];
+      const prompt = `Você é um especialista em OCR de documentos industriais escritos à mão.
 
-Para cada peça identificada, retorne:
-- "peca": o código ou nome da peça (ex: "3.01.0478" ou "SUPORTE LATERAL")
-- "quantidade": a quantidade processada (número inteiro)
+Esta imagem é uma FOLHA DE CONTROLE DE DOBRA escrita manualmente por operadores de fábrica.
+A tabela tem colunas nesta ordem: PAINEL | PEÇA | DOBRAR (✓) | DATA | ASSINATURA OPERADOR.
 
-IMPORTANTE: Retorne APENAS um array JSON puro, sem markdown, sem explicação.
-Exemplo: [{"peca": "3.01.0478", "quantidade": 5}, {"peca": "3.01.0521", "quantidade": 3}]
-Se não encontrar nenhuma peça legível, retorne: []`;
+REGRAS DE LEITURA:
+1. Cada linha da tabela representa 1 (UMA) peça processada.
+2. A mesma peça pode aparecer várias vezes — isso indica que aquela peça foi processada múltiplas vezes.
+3. AGRUPE as linhas pelo par PAINEL+PEÇA e some a quantidade de linhas como "quantidade".
+4. A coluna DOBRAR contém marcas de verificação (✓, V, √) — linhas sem marcação foram canceladas, IGNORE-AS.
+5. PAINEL pode ter valores como "RK17", "8x19", "B19" etc. — registre como está.
+6. A coluna DATA contém datas no formato DD/MM — registre como está (ex: "01/07").
+7. A coluna ASSINATURA OPERADOR contém o nome escrito do operador — tente identificar o nome.
+8. Erros de caligrafia são comuns: "TRAVESSEIRO" pode estar escrito como "TRAVESSEIRO", "TRAVESEIRO", "TRAVESSERO" etc. — normalize para a forma mais próxima do correto.
 
-      let parsed: { peca: string; quantidade: number }[] = [];
+RETORNE APENAS um array JSON puro, sem markdown, sem texto antes ou depois.
+Formato de cada item:
+{"peca": "NOME DA PEÇA", "painel": "RK17", "quantidade": 5, "data": "01/07", "operador": "OSVALDO"}
+
+Se a mesma peça aparece em mais de um PAINEL diferente, crie entradas separadas para cada PAINEL.
+Se não encontrar nada legível, retorne: []`;
+
+      let parsed: { peca: string; painel?: string; quantidade: number; data?: string; operador?: string }[] = [];
       for (const modelName of modelsToTry) {
         try {
           const model = genAI.getGenerativeModel({ model: modelName });
@@ -690,23 +703,47 @@ Se não encontrar nenhuma peça legível, retorne: []`;
             .ilike("peca", `%${item.peca.trim()}%`)
             .limit(1);
           const cat = matches?.[0];
+          // Usa o painel extraído pela IA como número de balsa (ex: "RK17", "8x19")
+          const painelLido = item.painel?.trim() ?? "";
           return {
             id: `row-${i}-${Date.now()}`,
             peca: cat?.peca ?? item.peca.trim(),
             quantidade: item.quantidade ?? 1,
             nesting: cat?.nesting ?? null,
-            painel: cat?.painel ?? null,
+            painel: cat?.painel ?? painelLido ?? null,
             dimensional: cat?.dimensional ?? null,
             espessura_mm: cat?.espessura_mm ?? null,
             peso_kg: cat ? Number(cat.peso_kg) : null,
             catalogMatch: !!cat,
             balsaTipo: "RAKE" as const,
-            balsaNumero: "",
+            balsaNumero: painelLido,
+            aiOperadorNome: item.operador?.trim() ?? null,
+            aiData: item.data?.trim() ?? null,
           };
         })
       );
 
       setAiRows(enriched);
+
+      // Pré-preenche a data se a IA conseguiu extrair (converte "01/07" → "2026-07-01")
+      const firstData = enriched[0]?.aiData;
+      if (firstData) {
+        const [dd, mm] = firstData.split("/");
+        if (dd && mm) {
+          const year = new Date().getFullYear();
+          const iso = `${year}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+          setAiBulkData(iso);
+        }
+      }
+
+      // Tenta pré-selecionar o operador se o nome extraído bater com algum cadastrado
+      const firstOpNome = enriched[0]?.aiOperadorNome?.toUpperCase();
+      if (firstOpNome) {
+        const opMatch = operadores.find((o) =>
+          o.nome.toUpperCase().includes(firstOpNome) || firstOpNome.includes(o.nome.toUpperCase().split(" ")[0])
+        );
+        if (opMatch) setAiBulkOperadorId(opMatch.id);
+      }
       setAiStep("reviewing");
     } catch (err: any) {
       alert("Erro na IA: " + err.message);
