@@ -189,12 +189,14 @@ function OperadoresDobraPanel() {
   const toggleTurno = async (op: OpDobra) => {
     const novoTurnoOp: "D" | "N" = op.turno === "D" ? "N" : "D";
     await supabase.from("operadores_dobra").update({ turno: novoTurnoOp }).eq("id", op.id);
+    await supabase.from("dobra").update({ turno: novoTurnoOp }).eq("operador_id", op.id);
     setLista(l => l.map(o => o.id === op.id ? { ...o, turno: novoTurnoOp } : o));
   };
 
   const toggleMaquina = async (op: OpDobra) => {
     const nova: "PRENSA" | "DOBRADEIRA" = op.maquina === "PRENSA" ? "DOBRADEIRA" : "PRENSA";
     await supabase.from("operadores_dobra").update({ maquina: nova }).eq("id", op.id);
+    await supabase.from("dobra").update({ maquina: nova }).eq("operador_id", op.id);
     setLista(l => l.map(o => o.id === op.id ? { ...o, maquina: nova } : o));
   };
 
