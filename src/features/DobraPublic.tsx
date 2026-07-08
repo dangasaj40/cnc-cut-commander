@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
 } from "recharts";
-import { BarChart2, Users, Package, Scale, Calendar, Filter, ArrowLeft, Eye, Activity } from "lucide-react";
+import { BarChart2, Users, Package, Scale, Filter, Eye, Activity, AlertOctagon, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -21,6 +21,17 @@ interface DobraRecord {
   quantidade: number;
   peso_kg: number | null;
   observacoes: string | null;
+}
+
+interface ParadaDobra {
+  id: string;
+  data_inicio: string;
+  data_fim: string | null;
+  motivo: string;
+  observacoes: string | null;
+  operador_nome: string | null;
+  maquina: string | null;
+  duracao_min: number | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -50,6 +61,7 @@ export default function DobraPublic() {
     (search.maquina as "DOBRADEIRA" | "PRENSA") || "DOBRADEIRA"
   );
   const [historico, setHistorico] = useState<DobraRecord[]>([]);
+  const [paradas, setParadas] = useState<ParadaDobra[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -67,6 +79,16 @@ export default function DobraPublic() {
           .order("data", { ascending: false });
         if (error) throw error;
         setHistorico((data ?? []) as DobraRecord[]);
+
+        // Paradas de máquina
+        const { data: paradaData } = await supabase
+          .from("paradas_dobra")
+          .select("id, data_inicio, data_fim, motivo, observacoes, operador_nome, maquina, duracao_min")
+          .eq("maquina", maquinaAtiva)
+          .gte("data_inicio", filtroInicio)
+          .lte("data_inicio", filtroFim + "T23:59:59")
+          .order("data_inicio", { ascending: false });
+        setParadas((paradaData ?? []) as ParadaDobra[]);
       } catch (err: any) {
         console.error("Erro ao carregar dados:", err.message);
       } finally {
@@ -373,6 +395,67 @@ export default function DobraPublic() {
                 {historicoFiltrado.length > 200 && (
                   <p className="text-center text-[9px] text-slate-600 mt-3">Exibindo 200 de {historicoFiltrado.length} registros. Use os filtros para refinar.</p>
                 )}
+              </div>
+            </div>
+
+            {/* ── Paradas de Máquina ── */}
+            <div className="glass-card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <AlertOctagon size={14} className="text-red-400" />
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Paradas de Máquina</p>
+                </div>
+                <span className="text-[9px] text-slate-600">{paradas.length} registro(s)</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-white/[0.02]">
+                    <tr>
+                      {["Início", "Fim", "Duração", "Motivo", "Operador", "Obs."].map((h) => (
+                        <th key={h} className="px-3 py-2.5 text-[8px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.03]">
+                    {paradas.map((p) => {
+                      const fmtDt = (iso: string | null) => {
+                        if (!iso) return "—";
+                        const d = new Date(iso);
+                        return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+                      };
+                      const durStr = p.duracao_min != null
+                        ? `${Math.floor(p.duracao_min / 60)}h ${p.duracao_min % 60}min`
+                        : p.data_fim ? (() => {
+                            const ms = new Date(p.data_fim).getTime() - new Date(p.data_inicio).getTime();
+                            const mins = Math.round(ms / 60000);
+                            return `${Math.floor(mins / 60)}h ${mins % 60}min`;
+                          })() : "Em aberto";
+                      return (
+                        <tr key={p.id} className="hover:bg-white/[0.02] transition-colors">
+                          <td className="px-3 py-2 text-[10px] font-mono text-slate-400 whitespace-nowrap">{fmtDt(p.data_inicio)}</td>
+                          <td className="px-3 py-2 text-[10px] font-mono text-slate-400 whitespace-nowrap">{fmtDt(p.data_fim)}</td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                              p.data_fim
+                                ? "bg-slate-500/10 text-slate-400"
+                                : "bg-red-500/10 text-red-400 border border-red-500/20"
+                            }`}>
+                              <Clock size={9} />{durStr}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-[10px] text-white font-medium">{p.motivo}</td>
+                          <td className="px-3 py-2 text-[10px] text-slate-300">{p.operador_nome ?? "—"}</td>
+                          <td className="px-3 py-2 text-[10px] text-slate-500 max-w-[160px] truncate">{p.observacoes ?? "—"}</td>
+                        </tr>
+                      );
+                    })}
+                    {paradas.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-8 text-center text-xs text-slate-600">Nenhuma parada registrada no período.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </>
