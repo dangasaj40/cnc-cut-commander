@@ -149,6 +149,27 @@ function TurnoBadge({ turno, size = "sm" }: { turno: "D" | "N" | null; size?: "x
   );
 }
 
+const normalizeCode = (str: string) => 
+  str.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+
+const getLevenshteinDistance = (a: string, b: string): number => {
+  const tmp: number[][] = [];
+  const alen = a.length;
+  const blen = b.length;
+  if (alen === 0) return blen;
+  if (blen === 0) return alen;
+  for (let i = 0; i <= alen; i++) tmp[i] = [i];
+  for (let j = 0; j <= blen; j++) tmp[0][j] = j;
+  for (let i = 1; i <= alen; i++) {
+    for (let j = 1; j <= blen; j++) {
+      tmp[i][j] = a.charAt(i - 1) === b.charAt(j - 1)
+        ? tmp[i - 1][j - 1]
+        : Math.min(tmp[i - 1][j - 1] + 1, tmp[i][j - 1] + 1, tmp[i - 1][j] + 1);
+    }
+  }
+  return tmp[alen][blen];
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DobraPage() {
@@ -239,8 +260,9 @@ export default function DobraPage() {
     catalogMatch: boolean;
     balsaTipo: "RAKE" | "BOX" | "S/TAG";
     balsaNumero: string;
-    aiOperadorNome: string | null; // nome do operador lido pela IA (para sugestão)
-    aiData: string | null;         // data lida pela IA (para sugestão)
+    aiOperadorNome: string | null;
+    aiData: string | null;
+    rowData: string;  // data individual por linha (ISO YYYY-MM-DD)
   }
   const [aiImportOpen, setAiImportOpen] = useState(false);
   const aiFileRef = useRef<HTMLInputElement>(null);
@@ -250,10 +272,14 @@ export default function DobraPage() {
   const [aiProcessing, setAiProcessing] = useState(false);
   const [aiStep, setAiStep] = useState<"upload" | "reviewing">("upload");
   const [aiRows, setAiRows] = useState<AiBulkRow[]>([]);
+  const [dbCatalog, setDbCatalog] = useState<any[]>([]);
+  const [aiActiveEditIdx, setAiActiveEditIdx] = useState<number | null>(null);
+  const [aiEditQuery, setAiEditQuery] = useState<string>("");
   const [aiBulkOperadorId, setAiBulkOperadorId] = useState("");
   const [aiBulkData, setAiBulkData] = useState(today());
   const [aiBulkBusy, setAiBulkBusy] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [historicoView, setHistoricoView] = useState<"registros" | "resumo">("registros");
 
   // ─────────────────────────────────────────────
   // Computed: filtered records + stats
@@ -331,6 +357,39 @@ export default function DobraPage() {
     return { total, statD, statN, chartDia, chartOp, chartBalsa, mediaTonsDia, diasAtivos };
   }, [historico, historicoFiltrado]);
 
+  // Resumo agrupado por peça (para a view de "Resumo por Peça")
+  const resumoPecas = useMemo(() => {
+    const map: Record<string, { quantidade: number; pesoTotal: number }> = {};
+    historicoFiltrado.forEach((r) => {
+      if (!map[r.peca]) map[r.peca] = { quantidade: 0, pesoTotal: 0 };
+      map[r.peca].quantidade += r.quantidade;
+      map[r.peca].pesoTotal += (Number(r.peso_kg) || 0) * r.quantidade;
+    });
+    return Object.entries(map)
+      .map(([peca, v]) => ({ peca, ...v }))
+      .sort((a, b) => b.quantidade - a.quantidade);
+  }, [historicoFiltrado]);
+
+  // Datas que têm parada registrada para a máquina ativa (para pontos vermelhos no gráfico)
+  const datasComParada = useMemo(() => {
+    const set = new Set<string>();
+    paradas
+      .filter((p) => p.maquina === maquinaAtiva)
+      .forEach((p) => {
+        set.add(p.data_inicio.split("T")[0]);
+      });
+    return set;
+  }, [paradas, maquinaAtiva]);
+
+  // Sugestões do catálogo em tempo real para edição na tabela de revisão da IA
+  const aiSuggestions = useMemo(() => {
+    if (aiActiveEditIdx === null || !aiEditQuery || aiEditQuery.length < 2) return [];
+    const queryNorm = normalizeCode(aiEditQuery);
+    return dbCatalog
+      .filter((item) => normalizeCode(item.peca).includes(queryNorm))
+      .slice(0, 5);
+  }, [aiActiveEditIdx, aiEditQuery, dbCatalog]);
+
   // ─────────────────────────────────────────────
   // Effects
   // ─────────────────────────────────────────────
@@ -358,6 +417,61 @@ export default function DobraPage() {
     loadHistorico();
     loadParadas();
   }, [filtroInicio, filtroFim, maquinaAtiva]);
+
+  // Carrega catálogo ao abrir importador por IA
+  useEffect(() => {
+    if (aiImportOpen && dbCatalog.length === 0) {
+      supabase
+        .from("catalogo_pecas")
+        .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg")
+        .then(({ data }) => {
+          if (data) setDbCatalog(data);
+        });
+    }
+  }, [aiImportOpen]);
+
+  const findBestCatalogMatch = (ocrPeca: string, catalogList = dbCatalog) => {
+    if (!ocrPeca || catalogList.length === 0) return null;
+    const normOcr = normalizeCode(ocrPeca);
+    if (!normOcr) return null;
+
+    let bestMatch = null;
+    let minDistance = 999;
+    
+    for (const item of catalogList) {
+      const normDb = normalizeCode(item.peca);
+      if (normDb === normOcr) {
+        return item;
+      }
+
+      const dist = getLevenshteinDistance(normOcr, normDb);
+      const threshold = Math.max(2, Math.floor(normDb.length * 0.35));
+      if (dist < minDistance && dist <= threshold) {
+        minDistance = dist;
+        bestMatch = item;
+      }
+    }
+    return bestMatch;
+  };
+
+  const handleAiRowPecaChange = (idx: number, newVal: string) => {
+    const cat = findBestCatalogMatch(newVal);
+    setAiRows(rows => rows.map((r, i) => {
+      if (i === idx) {
+        return {
+          ...r,
+          peca: newVal,
+          nesting: cat?.nesting ?? null,
+          painel: cat?.painel ?? r.painel,
+          dimensional: cat?.dimensional ?? null,
+          espessura_mm: cat?.espessura_mm ?? null,
+          peso_kg: cat ? Number(cat.peso_kg) : null,
+          catalogMatch: !!cat
+        };
+      }
+      return r;
+    }));
+  };
 
   // Busca dinâmica de peças — Insert
   useEffect(() => {
@@ -665,84 +779,160 @@ export default function DobraPage() {
       const { GoogleGenerativeAI } = await getGemini();
       const genAI = new GoogleGenerativeAI(apiKey.trim());
 
-      const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-lite"];
-      const prompt = `Você é um especialista em OCR de documentos industriais escritos à mão.
+      let modelsToTry = ["gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"];
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey.trim()}`);
+        if (res.ok) {
+          const json = await res.json();
+          const availableModels = json.models || [];
+          const genModels = availableModels.filter((m: any) => 
+            m.supportedGenerationMethods?.includes('generateContent') &&
+            !m.name.includes('nano') &&
+            !m.name.includes('experimental')
+          );
+          const preferred = ["gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-2.5-flash", "gemini-2.5-pro"];
+          const availableNames = genModels.map((m: any) => m.name.replace('models/', ''));
+          const discoveredPreferred = preferred.filter(p => availableNames.includes(p));
+          const others = availableNames.filter(name => !discoveredPreferred.includes(name));
+          modelsToTry = [...discoveredPreferred, ...others];
+          console.log("[AI OCR] Modelos autodescobertos na rota Dobra:", modelsToTry);
+        }
+      } catch (e) {
+        console.error("[AI OCR] Falha na autodescoberta de modelos", e);
+      }
 
-Esta imagem é uma FOLHA DE CONTROLE DE DOBRA escrita manualmente por operadores de fábrica.
-A tabela tem colunas nesta ordem: PAINEL | PEÇA | DOBRAR (✓) | DATA | ASSINATURA OPERADOR.
+      const prompt = `Você é um especialista em OCR de documentos industriais escritos à mão em português brasileiro.
 
-REGRAS DE LEITURA:
-1. Cada linha da tabela representa 1 (UMA) peça processada.
-2. A mesma peça pode aparecer várias vezes — isso indica que aquela peça foi processada múltiplas vezes.
-3. AGRUPE as linhas pelo par PAINEL+PEÇA e some a quantidade de linhas como "quantidade".
-4. A coluna DOBRAR contém marcas de verificação (✓, V, √) — linhas sem marcação foram canceladas, IGNORE-AS.
-5. PAINEL pode ter valores como "RK17", "8x19", "B19" etc. — registre como está.
-6. A coluna DATA contém datas no formato DD/MM — registre como está (ex: "01/07").
-7. A coluna ASSINATURA OPERADOR contém o nome escrito do operador — tente identificar o nome.
-8. Erros de caligrafia são comuns: "TRAVESSEIRO" pode estar escrito como "TRAVESSEIRO", "TRAVESEIRO", "TRAVESSERO" etc. — normalize para a forma mais próxima do correto.
+Esta imagem é uma FOLHA DE CONTROLE DE DOBRA (dobradeira de chapas) preenchida manualmente por operadores de fábrica.
+A foto pode estar levemente inclinada ou girada — ignore a orientação e leia o conteúdo normalmente.
 
-RETORNE APENAS um array JSON puro, sem markdown, sem texto antes ou depois.
-Formato de cada item:
-{"peca": "NOME DA PEÇA", "painel": "RK17", "quantidade": 5, "data": "01/07", "operador": "OSVALDO"}
+ESTRUTURA DA TABELA (colunas da esquerda para direita):
+1. PAINEL — identificador do painel (ex: "BOX12", "RK10", "BOX19", "RK17"). Pode estar vazio.
+2. PEÇA — código/nome da peça (ex: "RD HB 8B", "RL1 HB2AC", "BCB1RL1HB1AB"). CAMPO OBRIGATÓRIO.
+3. DOBRAR — coluna de confirmação. Nesta fábrica é marcado como "OK", "Ok", "ok", "V", "✓", "√". Linhas SEM marcação foram canceladas — IGNORE essas linhas.
+4. DATA — data no formato DD/MM ou DD/MM/AA (ex: "24/02", "24/02/26").
+5. ASSINATURA OPERADOR — nome cursivo do operador (ex: "Andreza", "Anderson", "Osvaldo").
 
-Se a mesma peça aparece em mais de um PAINEL diferente, crie entradas separadas para cada PAINEL.
-Se não encontrar nada legível, retorne: []`;
+REGRAS OBRIGATÓRIAS:
+1. Cada linha da tabela com marcação em DOBRAR representa 1 (UMA) peça dobrada.
+2. Se a mesma PEÇA aparece várias vezes com o mesmo PAINEL → some as ocorrências no campo "quantidade".
+3. Se a mesma PEÇA aparece com PAINEIs diferentes → crie entradas SEPARADAS para cada PAINEL.
+4. Leia TODOS os códigos de peça exatamente como escritos (ex: "BPRRFA85HB4", "RFRO-RFA94HB55C").
+5. Não tente corrigir ou normalizar os códigos de peça — copie-os literalmente.
+6. Se PAINEL estiver em branco/vazio para uma linha, use null ou string vazia.
+7. A data costuma ser a mesma em toda a folha — se não conseguir ler uma data específica, use a data mais comum da folha.
+8. O nome do operador costuma ser o mesmo em toda a folha (assinatura cursiva).
+
+RETORNE APENAS um array JSON puro, sem markdown, sem explicações, sem texto antes ou depois.
+Formato de cada objeto:
+{"peca": "RD HB 8B", "painel": "BOX12", "quantidade": 3, "data": "24/02/26", "operador": "Andreza"}
+
+IMPORTANTE: Se houver qualquer dúvida na leitura, faça sua melhor estimativa — NUNCA retorne array vazio se houver linhas com marcação OK visíveis na imagem.
+Se realmente não encontrar nada, retorne: []`;
 
       let parsed: { peca: string; painel?: string; quantidade: number; data?: string; operador?: string }[] = [];
+      const errors: string[] = [];
       for (const modelName of modelsToTry) {
         try {
+          console.log(`[AI OCR] Tentando modelo: ${modelName}`);
           const model = genAI.getGenerativeModel({ model: modelName });
           const result = await model.generateContent([
             prompt,
             { inlineData: { data: aiImageB64, mimeType: aiImageMime } },
           ]);
-          const text = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-          const match = text.match(/\[.*\]/s);
-          parsed = JSON.parse(match ? match[0] : text);
-          break;
+          const rawText = result.response.text();
+          console.log(`[AI OCR] Resposta bruta do ${modelName}:`, rawText);
+          
+          if (!rawText || rawText.trim() === "") {
+            console.warn(`[AI OCR] Resposta vazia do modelo ${modelName}`);
+            continue;
+          }
+
+          // Tenta extrair JSON mesmo que venha com texto ao redor
+          const text = rawText
+            .replace(/```json/gi, "")
+            .replace(/```/g, "")
+            .trim();
+          
+          // Busca o primeiro array JSON no texto
+          const match = text.match(/\[[\s\S]*\]/);
+          if (match) {
+            parsed = JSON.parse(match[0]);
+          } else {
+            parsed = JSON.parse(text);
+          }
+          console.log(`[AI OCR] Sucesso no parsing com ${modelName}:`, parsed);
+          if (parsed && parsed.length > 0) break;
         } catch (err: any) {
           console.warn(`Modelo ${modelName} falhou:`, err.message);
+          errors.push(`${modelName}: ${err.message}`);
           if (err.message?.includes("API_KEY_INVALID")) throw new Error("Chave API inválida.");
         }
       }
 
       if (!parsed || parsed.length === 0) {
-        alert("A IA não encontrou peças legíveis na imagem. Tente uma foto mais nítida.");
+        if (errors.length > 0) {
+          alert(`Houve erro na comunicação com a API do Gemini:\n\n${errors.join("\n")}\n\nVerifique se a chave de API nas Configurações do Sistema está correta.`);
+        } else {
+          alert("A IA não encontrou peças legíveis na imagem. Verifique se a coluna DOBRAR tem marcações 'OK' visíveis e tente novamente com melhor iluminação.");
+        }
         return;
       }
 
-      // Enriquece cada linha buscando no catálogo
-      const enriched: AiBulkRow[] = await Promise.all(
-        parsed.map(async (item, i) => {
-          const { data: matches } = await supabase
-            .from("catalogo_pecas")
-            .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg")
-            .ilike("peca", `%${item.peca.trim()}%`)
-            .limit(1);
-          const cat = matches?.[0];
-          // Usa o painel extraído pela IA como número de balsa (ex: "RK17", "8x19")
-          const painelLido = item.painel?.trim() ?? "";
-          return {
-            id: `row-${i}-${Date.now()}`,
-            peca: cat?.peca ?? item.peca.trim(),
-            quantidade: item.quantidade ?? 1,
-            nesting: cat?.nesting ?? null,
-            painel: cat?.painel ?? painelLido ?? null,
-            dimensional: cat?.dimensional ?? null,
-            espessura_mm: cat?.espessura_mm ?? null,
-            peso_kg: cat ? Number(cat.peso_kg) : null,
-            catalogMatch: !!cat,
-            balsaTipo: "RAKE" as const,
-            balsaNumero: painelLido,
-            aiOperadorNome: item.operador?.trim() ?? null,
-            aiData: item.data?.trim() ?? null,
-          };
-        })
-      );
+      // Carrega todo o catálogo em memória para correspondência inteligente se ainda não carregado
+      let currentCatalog = dbCatalog;
+      if (currentCatalog.length === 0) {
+        const { data: catalogItems } = await supabase
+          .from("catalogo_pecas")
+          .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg");
+        currentCatalog = (catalogItems || []) as any[];
+        setDbCatalog(currentCatalog);
+      }
 
-      setAiRows(enriched);
+      // Enriquece cada linha buscando no catálogo em memória com correspondência inteligente
+      const enriched: AiBulkRow[] = parsed.map((item, i) => {
+        const cat = findBestCatalogMatch(item.peca, currentCatalog);
+        const painelLido = item.painel?.trim() ?? "";
+        return {
+          id: `row-${i}-${Date.now()}`,
+          peca: cat?.peca ?? item.peca.trim(),
+          quantidade: item.quantidade ?? 1,
+          nesting: cat?.nesting ?? null,
+          painel: cat?.painel ?? painelLido ?? null,
+          dimensional: cat?.dimensional ?? null,
+          espessura_mm: cat?.espessura_mm ?? null,
+          peso_kg: cat ? Number(cat.peso_kg) : null,
+          catalogMatch: !!cat,
+          balsaTipo: "RAKE" as const,
+          balsaNumero: painelLido,
+          aiOperadorNome: item.operador?.trim() ?? null,
+          aiData: item.data?.trim() ?? null,
+          rowData: today(), // será preenchido abaixo com a data extraída pela IA
+        };
+      });
 
-      // Pré-preenche a data se a IA conseguiu extrair (converte "01/07" → "2026-07-01")
+      // Converte a data extraída pela IA (DD/MM ou DD/MM/AA) para ISO por linha
+      const parseAiDate = (aiDate: string | null): string => {
+        if (!aiDate) return today();
+        const parts = aiDate.split("/");
+        if (parts.length >= 2) {
+          const dd = parts[0].padStart(2, "0");
+          const mm = parts[1].padStart(2, "0");
+          const year = parts[2] ? (parts[2].length === 2 ? `20${parts[2]}` : parts[2]) : String(new Date().getFullYear());
+          const iso = `${year}-${mm}-${dd}`;
+          if (!isNaN(Date.parse(iso))) return iso;
+        }
+        return today();
+      };
+
+      const enrichedWithDates = enriched.map(row => ({
+        ...row,
+        rowData: parseAiDate(row.aiData),
+      }));
+
+      setAiRows(enrichedWithDates);
+
+      // Pré-preenche a data global se a IA conseguiu extrair (converte "01/07" → "2026-07-01")
       const firstData = enriched[0]?.aiData;
       if (firstData) {
         const [dd, mm] = firstData.split("/");
@@ -788,7 +978,7 @@ Se não encontrar nada legível, retorne: []`;
         turno: op?.turno ?? null,
         maquina: maquinaAtiva,
         balsa: r.balsaTipo === "S/TAG" ? "S/TAG" : (r.balsaNumero.trim() ? `${r.balsaTipo}-${r.balsaNumero.trim()}` : null),
-        data: aiBulkData,
+        data: r.rowData || aiBulkData,
         observacoes: "Importado via IA",
         criado_por: user?.id,
       }));
@@ -1344,10 +1534,10 @@ Se não encontrar nada legível, retorne: []`;
       {/* ── SEÇÃO DE HISTÓRICO DE PARADAS ── */}
       <div className="glass-card p-6 flex flex-col justify-between min-h-[300px]">
         <div>
-          <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
-            <div className="flex items-center gap-3 text-slate-400">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
+            <div className="flex items-center gap-3 text-slate-700">
               <History size={16} />
-              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em]">Histórico de Paradas ({MAQUINA[maquinaAtiva].label})</h3>
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-800">Histórico de Paradas ({MAQUINA[maquinaAtiva].label})</h3>
             </div>
             <button
               type="button"
@@ -1359,38 +1549,38 @@ Se não encontrar nada legível, retorne: []`;
           </div>
 
           {loadingParadas ? (
-            <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
+            <div className="flex items-center justify-center py-12 gap-3 text-slate-500">
               <div className="size-5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
               <span className="text-xs uppercase tracking-widest font-bold">Carregando...</span>
             </div>
           ) : paradas.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
               <Activity size={24} className="opacity-20 mb-2" />
-              <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Sem paradas registradas</span>
+              <span className="text-xs font-bold uppercase tracking-widest">Sem paradas registradas</span>
             </div>
           ) : (
             <div className="max-h-[280px] overflow-y-auto space-y-2 pr-1 text-left">
               {paradas.map((p) => (
-                <div key={p.id} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+                <div key={p.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-black text-slate-100 uppercase tracking-widest">{p.motivo}</span>
+                      <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">{p.motivo}</span>
                       {p.status === "Em aberto" ? (
-                        <span className="px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full text-[8px] font-bold uppercase">Em aberto</span>
+                        <span className="px-1.5 py-0.5 bg-red-50 border border-red-200 text-red-600 rounded-full text-[8px] font-bold uppercase">Em aberto</span>
                       ) : (
-                        <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-full text-[8px] font-mono text-slate-400">{p.duracao_minutos} min</span>
+                        <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded-full text-[8px] font-mono text-slate-700">{p.duracao_minutos} min</span>
                       )}
                     </div>
-                    <div className="text-[9px] text-muted-foreground">
+                    <div className="text-[9px] text-slate-600 font-medium">
                       {p.operador_nome} · {new Date(p.data_inicio).toLocaleDateString("pt-BR")} às {new Date(p.data_inicio).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}
                     </div>
-                    {p.observacao && <p className="text-[9px] text-muted-foreground italic truncate max-w-[280px]">"{p.observacao}"</p>}
+                    {p.observacao && <p className="text-[9px] text-slate-500 italic truncate max-w-[280px]">"{p.observacao}"</p>}
                   </div>
 
                   {(isAdmin || isSupervisor) && (
                     <button
                       onClick={() => deleteParada(p.id)}
-                      className="text-muted-foreground hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10 transition-colors shrink-0 ml-auto"
+                      className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0 ml-auto"
                       title="Excluir Parada"
                     >
                       <Trash2 size={13} />
@@ -1900,9 +2090,9 @@ Se não encontrar nada legível, retorne: []`;
 
       {/* ── HISTÓRICO ── */}
       <div className="glass-card overflow-hidden">
-        <div className="px-6 py-5 border-b border-white/5 flex items-center gap-3 flex-wrap">
+        <div className="px-6 py-5 border-b border-slate-200 flex items-center gap-3 flex-wrap">
           <Layers size={16} className="text-amber-400" />
-          <h2 className="text-[10px] font-bold uppercase tracking-[0.2em]">Histórico de Dobras</h2>
+          <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-800">Histórico de Dobras</h2>
           {/* Badge da máquina ativa */}
           <span
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black"
@@ -1912,152 +2102,240 @@ Se não encontrar nada legível, retorne: []`;
             {MAQUINA[maquinaAtiva].label}
           </span>
           {filtroTurno && <TurnoBadge turno={filtroTurno} size="xs" />}
-          <span className="ml-auto text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-            {historicoFiltrado.length} registro{historicoFiltrado.length !== 1 ? "s" : ""}
+
+          {/* Toggle: Registros vs Resumo por Peça */}
+          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 ml-4">
+            <button
+              type="button"
+              onClick={() => setHistoricoView("registros")}
+              className={`px-3 py-1 rounded-md text-[9px] font-bold uppercase tracking-widest transition-all ${
+                historicoView === "registros"
+                  ? "bg-amber-500 text-slate-950 font-black shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Registros
+            </button>
+            <button
+              type="button"
+              onClick={() => setHistoricoView("resumo")}
+              className={`px-3 py-1 rounded-md text-[9px] font-bold uppercase tracking-widest transition-all ${
+                historicoView === "resumo"
+                  ? "bg-amber-500 text-slate-950 font-black shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Resumo por Peça
+            </button>
+          </div>
+
+          <span className="ml-auto text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+            {historicoView === "registros"
+              ? `${historicoFiltrado.length} registro${historicoFiltrado.length !== 1 ? "s" : ""}`
+              : `${resumoPecas.length} peça${resumoPecas.length !== 1 ? "s" : ""} distinta${resumoPecas.length !== 1 ? "s" : ""}`}
           </span>
         </div>
 
         {loadingHist ? (
-          <div className="flex items-center justify-center py-16 gap-3 text-muted-foreground">
+          <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
             <div className="size-6 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
             <span className="text-xs uppercase tracking-widest font-bold">Carregando...</span>
           </div>
         ) : historicoFiltrado.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
             <Hammer size={32} className="opacity-20" />
             <p className="text-xs uppercase tracking-widest font-bold">Nenhum registro no período</p>
           </div>
         ) : (
           <>
-            {/* Desktop table */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-white/5">
-                  <tr>
-                    {["Data", "Turno", "Peça", "Nesting / Painel", "Balsa", "Dim. / Esp.", "Peso (kg)", "Qtd", "Operador", "Obs.", ""].map((h) => (
-                      <th key={h} className="px-5 py-3.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {historicoFiltrado.map((r) => (
-                    <tr key={r.id} className="hover:bg-white/[0.02] transition-colors group">
-                      <td className="px-5 py-3.5 text-xs font-mono text-muted-foreground whitespace-nowrap">
-                        {new Date(r.data + "T12:00:00").toLocaleDateString("pt-BR")}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <TurnoBadge turno={r.turno} size="xs" />
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="text-sm font-bold">{r.peca}</span>
-                      </td>
-                      <td className="px-5 py-3.5 text-[10px] text-muted-foreground">
-                        <div>{r.nesting || "—"}</div>
-                        <div className="text-[9px]">{r.painel || ""}</div>
-                      </td>
-                      <td className="px-5 py-3.5 text-xs font-mono">
-                        {r.balsa ? (
-                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-[10px] font-mono">
-                            {r.balsa}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 text-[10px] font-mono text-muted-foreground whitespace-nowrap">
-                        {r.dimensional || "—"}<br />
-                        {r.espessura_mm ? `${r.espessura_mm}mm` : ""}
-                      </td>
-                      <td className="px-5 py-3.5 text-xs font-mono">
-                        {r.peso_kg ? Number(r.peso_kg).toFixed(2) : "—"}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          {r.quantidade}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-xs font-medium">{r.operador_nome || "—"}</td>
-                      <td className="px-5 py-3.5 text-[10px] text-muted-foreground max-w-[140px] truncate">
-                        {r.observacoes || "—"}
-                      </td>
-                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {(isAdmin || isSupervisor) && (
-                            <button
-                              onClick={() => startEdit(r)}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-all"
-                              title="Editar Registro"
-                            >
-                              <Pencil size={13} />
-                            </button>
-                          )}
-                          {(isAdmin || isSupervisor) && (
-                            <button
-                              onClick={() => handleDelete(r.id)}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-all"
-                              title="Excluir Registro"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {historicoView === "registros" ? (
+              <>
+                {/* Desktop table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        {["Data", "Turno", "Peça", "Nesting / Painel", "Balsa", "Dim. / Esp.", "Peso (kg)", "Qtd", "Operador", "Obs.", ""].map((h) => (
+                          <th key={h} className="px-5 py-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-600 whitespace-nowrap">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {historicoFiltrado.map((r) => (
+                        <tr key={r.id} className="hover:bg-slate-50 transition-colors group">
+                          <td className="px-5 py-3.5 text-xs font-mono text-slate-600 whitespace-nowrap">
+                            {new Date(r.data + "T12:00:00").toLocaleDateString("pt-BR")}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <TurnoBadge turno={r.turno} size="xs" />
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="text-sm font-bold text-slate-900">{r.peca}</span>
+                          </td>
+                          <td className="px-5 py-3.5 text-[10px] text-slate-600">
+                            <div className="font-semibold text-slate-800">{r.nesting || "—"}</div>
+                            <div className="text-[9px] text-slate-500">{r.painel || ""}</div>
+                          </td>
+                          <td className="px-5 py-3.5 text-xs font-mono">
+                            {r.balsa ? (
+                              <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-mono text-slate-700">
+                                {r.balsa}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5 text-[10px] font-mono text-slate-600 whitespace-nowrap">
+                            <div className="text-slate-700">{r.dimensional || "—"}</div>
+                            {r.espessura_mm ? <div className="text-slate-500">{r.espessura_mm}mm</div> : ""}
+                          </td>
+                          <td className="px-5 py-3.5 text-xs font-mono text-slate-700">
+                            {r.peso_kg ? Number(r.peso_kg).toFixed(2) : "—"}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                              {r.quantidade}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 text-xs font-bold text-slate-800">{r.operador_nome || "—"}</td>
+                          <td className="px-5 py-3.5 text-[10px] text-slate-500 max-w-[140px] truncate">
+                            {r.observacoes || "—"}
+                          </td>
+                          <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {(isAdmin || isSupervisor) && (
+                                <button
+                                  onClick={() => startEdit(r)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
+                                  title="Editar Registro"
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                              )}
+                              {(isAdmin || isSupervisor) && (
+                                <button
+                                  onClick={() => handleDelete(r.id)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all"
+                                  title="Excluir Registro"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-            {/* Mobile cards */}
-            <div className="md:hidden divide-y divide-white/5">
-              {historicoFiltrado.map((r) => (
-                <div key={r.id} className="p-5 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-bold">{r.peca}</div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
-                        {new Date(r.data + "T12:00:00").toLocaleDateString("pt-BR")} · {r.operador_nome || "—"}
+                {/* Mobile cards */}
+                <div className="md:hidden divide-y divide-slate-100">
+                  {historicoFiltrado.map((r) => (
+                    <div key={r.id} className="p-5 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-bold text-slate-900">{r.peca}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            {new Date(r.data + "T12:00:00").toLocaleDateString("pt-BR")} · {r.operador_nome || "—"}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <TurnoBadge turno={r.turno} size="xs" />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                            {r.quantidade} un
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      <TurnoBadge turno={r.turno} size="xs" />
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                        {r.quantidade} un
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-[9px] text-muted-foreground">
-                    {r.balsa && <span className="px-2 py-0.5 bg-amber-500/10 text-amber-600 rounded-full border border-amber-500/20 font-bold font-mono">Balsa: {r.balsa}</span>}
-                    {r.nesting && <span className="px-2 py-0.5 bg-white/5 rounded-full border border-white/10">Nesting: {r.nesting}</span>}
-                    {r.painel && <span className="px-2 py-0.5 bg-white/5 rounded-full border border-white/10">Painel: {r.painel}</span>}
-                    {r.espessura_mm && <span className="px-2 py-0.5 bg-white/5 rounded-full border border-white/10">{r.espessura_mm}mm</span>}
-                    {r.peso_kg && <span className="px-2 py-0.5 bg-white/5 rounded-full border border-white/10">{r.peso_kg}kg</span>}
-                  </div>
-                  {r.observacoes && <p className="text-[10px] text-muted-foreground italic">{r.observacoes}</p>}
-                  
-                  {(isAdmin || isSupervisor) && (
-                    <div className="flex gap-3 pt-2 border-t border-white/5">
-                      <button
-                        onClick={() => startEdit(r)}
-                        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-amber-500 transition-colors"
-                      >
-                        <Pencil size={12} /> Editar
-                      </button>
+                      <div className="flex flex-wrap gap-2 text-[9px] text-slate-600">
+                        {r.balsa && <span className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded-full border border-amber-200 font-bold font-mono">Balsa: {r.balsa}</span>}
+                        {r.nesting && <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full border border-slate-200">Nesting: {r.nesting}</span>}
+                        {r.painel && <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full border border-slate-200">Painel: {r.painel}</span>}
+                        {r.espessura_mm && <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full border border-slate-200">{r.espessura_mm}mm</span>}
+                        {r.peso_kg && <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full border border-slate-200">{r.peso_kg}kg</span>}
+                      </div>
+                      {r.observacoes && <p className="text-[10px] text-slate-500 italic">{r.observacoes}</p>}
+
                       {(isAdmin || isSupervisor) && (
-                        <button
-                          onClick={() => handleDelete(r.id)}
-                          className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-red-400 transition-colors"
-                        >
-                          <Trash2 size={12} /> Excluir
-                        </button>
+                        <div className="flex gap-3 pt-2 border-t border-slate-100">
+                          <button
+                            onClick={() => startEdit(r)}
+                            className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-amber-600 transition-colors"
+                          >
+                            <Pencil size={12} /> Editar
+                          </button>
+                          <button
+                            onClick={() => handleDelete(r.id)}
+                            className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-red-600 transition-colors"
+                          >
+                            <Trash2 size={12} /> Excluir
+                          </button>
+                        </div>
                       )}
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <>
+                {/* Resumo por Peça - Desktop Table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        {["Peça", "Quantidade Total (un)", "Peso Total (t)", "Peso Unitário Médio (kg)"].map((h) => (
+                          <th key={h} className="px-5 py-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-600 whitespace-nowrap">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {resumoPecas.map((r, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-5 py-3.5 text-xs font-bold text-slate-900">{r.peca}</td>
+                          <td className="px-5 py-3.5">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                              {r.quantidade} un
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 text-xs font-mono text-slate-800">
+                            {(r.pesoTotal / 1000).toFixed(3)} t
+                          </td>
+                          <td className="px-5 py-3.5 text-xs font-mono text-slate-600">
+                            {r.quantidade > 0 ? (r.pesoTotal / r.quantidade).toFixed(2) : "—"} kg
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Resumo por Peça - Mobile cards */}
+                <div className="md:hidden divide-y divide-slate-100">
+                  {resumoPecas.map((r, idx) => (
+                    <div key={idx} className="p-5 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">{r.peca}</div>
+                        <div className="text-[10px] text-slate-500 mt-1">
+                          Peso Unitário: {r.quantidade > 0 ? (r.pesoTotal / r.quantidade).toFixed(2) : "—"} kg
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                          {r.quantidade} un
+                        </span>
+                        <span className="text-xs font-mono text-slate-800 font-bold">
+                          {(r.pesoTotal / 1000).toFixed(3)} t
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
@@ -2309,13 +2587,13 @@ Se não encontrar nada legível, retorne: []`;
         document.body
       )}
 
-      {/* ── MODAL IA: IMPORTAR VIA FOTO ── */}
-      {aiImportOpen && ReactDOM.createPortal(
+      {/* ── MODAL IA: UPLOAD (PASSO 1) ── */}
+      {aiImportOpen && aiStep === "upload" && ReactDOM.createPortal(
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-3"
-          onClick={(e) => { if (e.target === e.currentTarget) { setAiImportOpen(false); setAiStep("upload"); } }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setAiImportOpen(false); } }}
         >
-          <div className="bg-[#0f172a] border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
+          <div className="bg-[#0f172a] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 shrink-0">
               <div className="flex items-center gap-3">
@@ -2324,12 +2602,10 @@ Se não encontrar nada legível, retorne: []`;
                 </div>
                 <div>
                   <h3 className="text-xs font-black uppercase tracking-widest text-white">Importar Peças via Foto</h3>
-                  <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5">
-                    {aiStep === "upload" ? "Passo 1 — Selecionar Imagem" : `Passo 2 — Revisar ${aiRows.length} peça(s) extraída(s)`}
-                  </p>
+                  <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5">Passo 1 — Selecionar Imagem</p>
                 </div>
               </div>
-              <button onClick={() => { setAiImportOpen(false); setAiStep("upload"); setAiRows([]); setAiPreviewUrl(null); setAiImageB64(null); }}
+              <button onClick={() => { setAiImportOpen(false); setAiRows([]); setAiPreviewUrl(null); setAiImageB64(null); }}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
                 <X size={16} />
               </button>
@@ -2337,237 +2613,307 @@ Se não encontrar nada legível, retorne: []`;
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Tire uma foto da <strong className="text-white">lista impressa de peças processadas</strong> (planilha, romaneio, folha de nesting). O Gemini Vision irá identificar os códigos e quantidades automaticamente.
+              </p>
 
-              {/* STEP 1: Upload */}
-              {aiStep === "upload" && (
-                <div className="space-y-5">
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Tire uma foto da <strong className="text-white">lista impressa de peças processadas</strong> (planilha, romaneio, folha de nesting). O Gemini Vision irá identificar os códigos e quantidades automaticamente.
-                  </p>
+              {/* Drop zone / preview */}
+              <div
+                onClick={() => aiFileRef.current?.click()}
+                className="relative border-2 border-dashed border-white/10 hover:border-violet-500/40 rounded-2xl transition-colors cursor-pointer overflow-hidden"
+                style={{ minHeight: 200 }}
+              >
+                {aiPreviewUrl ? (
+                  <img src={aiPreviewUrl} alt="Preview" className="w-full object-contain max-h-72 rounded-2xl" />
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
+                    <Camera size={40} className="opacity-30" />
+                    <p className="text-xs font-bold uppercase tracking-widest">Clique para selecionar ou fotografar</p>
+                    <p className="text-[9px] text-slate-600 uppercase tracking-widest">JPG, PNG, WEBP — até 20 MB</p>
+                  </div>
+                )}
+              </div>
 
-                  {/* Drop zone / preview */}
-                  <div
-                    onClick={() => aiFileRef.current?.click()}
-                    className="relative border-2 border-dashed border-white/10 hover:border-violet-500/40 rounded-2xl transition-colors cursor-pointer overflow-hidden"
-                    style={{ minHeight: 200 }}
+              <input
+                ref={aiFileRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleAiImagePick}
+              />
+
+              {aiPreviewUrl && (
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setAiPreviewUrl(null); setAiImageB64(null); }}
+                    className="px-4 py-2.5 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
                   >
-                    {aiPreviewUrl ? (
-                      <img src={aiPreviewUrl} alt="Preview" className="w-full object-contain max-h-72 rounded-2xl" />
+                    Trocar Imagem
+                  </button>
+                  <button
+                    type="button"
+                    onClick={processImageWithAI}
+                    disabled={aiProcessing}
+                    className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-black py-2.5 px-5 rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {aiProcessing ? (
+                      <>
+                        <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Analisando com Gemini...
+                      </>
                     ) : (
-                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
-                        <Camera size={40} className="opacity-30" />
-                        <p className="text-xs font-bold uppercase tracking-widest">Clique para selecionar ou fotografar</p>
-                        <p className="text-[9px] text-slate-600 uppercase tracking-widest">JPG, PNG, WEBP — até 20 MB</p>
-                      </div>
+                      <><Sparkles size={14} /> Analisar com IA</>
                     )}
-                  </div>
-
-                  <input
-                    ref={aiFileRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={handleAiImagePick}
-                  />
-
-                  {aiPreviewUrl && (
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => { setAiPreviewUrl(null); setAiImageB64(null); }}
-                        className="px-4 py-2.5 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
-                      >
-                        Trocar Imagem
-                      </button>
-                      <button
-                        type="button"
-                        onClick={processImageWithAI}
-                        disabled={aiProcessing}
-                        className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-black py-2.5 px-5 rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-                      >
-                        {aiProcessing ? (
-                          <>
-                            <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            Analisando com Gemini...
-                          </>
-                        ) : (
-                          <><Sparkles size={14} /> Analisar com IA</>
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* STEP 2: Review table */}
-              {aiStep === "reviewing" && (
-                <div className="space-y-5">
-                  {/* Operator + Date */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Operador Responsável *</label>
-                      <select
-                        className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
-                        style={{ colorScheme: 'dark' }}
-                        value={aiBulkOperadorId}
-                        onChange={(e) => setAiBulkOperadorId(e.target.value)}
-                        required
-                      >
-                        <option value="" style={{ background: '#0f172a' }}>Selecionar...</option>
-                        {operadores.map((o) => (
-                          <option key={o.id} value={o.id} style={{ background: '#0f172a' }}>{o.nome}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Data de Processamento *</label>
-                      <input
-                        type="date"
-                        className="field text-xs py-2 bg-slate-900 border-white/10 text-white"
-                        value={aiBulkData}
-                        onChange={(e) => setAiBulkData(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  {/* Summary bar */}
-                  <div className="flex items-center gap-4 p-3 bg-white/[0.02] border border-white/5 rounded-xl text-[10px]">
-                    <span className="text-slate-400">{aiRows.length} linha(s) extraída(s)</span>
-                    <span className="text-emerald-400 flex items-center gap-1">
-                      <FileCheck size={11} /> {aiRows.filter(r => r.catalogMatch).length} com catálogo
-                    </span>
-                    {aiRows.some(r => !r.catalogMatch) && (
-                      <span className="text-amber-400 flex items-center gap-1">
-                        <AlertTriangle size={11} /> {aiRows.filter(r => !r.catalogMatch).length} sem correspondência
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => { setAiStep("upload"); setAiRows([]); }}
-                      className="ml-auto text-slate-500 hover:text-white text-[9px] uppercase tracking-widest font-bold"
-                    >
-                      ← Nova foto
-                    </button>
-                  </div>
-
-                  {/* Editable table */}
-                  <div className="overflow-x-auto rounded-xl border border-white/5">
-                    <table className="w-full text-left">
-                      <thead className="bg-white/[0.03]">
-                        <tr>
-                          {["Peça", "Qtd", "Peso (kg)", "Balsa", "Status", ""].map(h => (
-                            <th key={h} className="px-3 py-2.5 text-[8px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {aiRows.map((row, idx) => (
-                          <tr key={row.id} className={`group ${!row.catalogMatch ? "bg-amber-500/[0.04]" : ""}`}>
-                            <td className="px-3 py-2">
-                              <div className="text-[10px] font-bold text-white">{row.peca}</div>
-                              {row.nesting && <div className="text-[8px] text-slate-500 font-mono">{row.nesting}</div>}
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="number"
-                                min={1}
-                                className="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-violet-500/50"
-                                value={row.quantidade}
-                                onChange={(e) => setAiRows(rows => rows.map((r, i) =>
-                                  i === idx ? { ...r, quantidade: Math.max(1, Number(e.target.value)) } : r
-                                ))}
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-[10px] font-mono text-slate-400">
-                              {row.peso_kg != null ? `${row.peso_kg} kg` : <span className="text-amber-500/70">—</span>}
-                            </td>
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-1">
-                                <select
-                                  className="bg-white/5 border border-white/10 rounded-lg px-1.5 py-1 text-[9px] text-white focus:outline-none"
-                                  style={{ colorScheme: 'dark' }}
-                                  value={row.balsaTipo}
-                                  onChange={(e) => setAiRows(rows => rows.map((r, i) =>
-                                    i === idx ? { ...r, balsaTipo: e.target.value as any } : r
-                                  ))}
-                                >
-                                  <option value="RAKE">RAKE</option>
-                                  <option value="BOX">BOX</option>
-                                  <option value="S/TAG">S/TAG</option>
-                                </select>
-                                {row.balsaTipo !== "S/TAG" && (
-                                  <input
-                                    type="text"
-                                    className="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[9px] text-white focus:outline-none"
-                                    placeholder="Nº"
-                                    value={row.balsaNumero}
-                                    onChange={(e) => setAiRows(rows => rows.map((r, i) =>
-                                      i === idx ? { ...r, balsaNumero: e.target.value } : r
-                                    ))}
-                                  />
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2">
-                              {row.catalogMatch ? (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-bold">
-                                  <CheckCircle2 size={9} /> OK
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[8px] font-bold">
-                                  <AlertTriangle size={9} /> Sem match
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2">
-                              <button
-                                type="button"
-                                onClick={() => setAiRows(rows => rows.filter((_, i) => i !== idx))}
-                                className="text-slate-600 hover:text-red-400 p-1 rounded transition-colors"
-                                title="Remover linha"
-                              >
-                                <X size={12} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  </button>
                 </div>
               )}
             </div>
-
-            {/* Footer */}
-            {aiStep === "reviewing" && (
-              <div className="px-6 py-4 border-t border-white/5 flex justify-end gap-3 shrink-0 bg-[#0f172a]">
-                <button
-                  type="button"
-                  onClick={() => { setAiImportOpen(false); setAiStep("upload"); setAiRows([]); setAiPreviewUrl(null); setAiImageB64(null); }}
-                  className="px-4 py-2.5 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-300 hover:text-white transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={saveBulkRows}
-                  disabled={aiBulkBusy || aiRows.length === 0 || !aiBulkOperadorId}
-                  className="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-black rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center gap-2"
-                >
-                  {aiBulkBusy ? (
-                    <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <><ImagePlus size={14} /> Salvar {aiRows.length} peça(s)</>
-                  )}
-                </button>
-              </div>
-            )}
           </div>
         </div>,
         document.body
       )}
+
+      {/* ── TELA CHEIA: REVISAR EXTRAÇÃO DA IA (PASSO 2) ── */}
+      {aiStep === "reviewing" && aiRows.length > 0 && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[9998] bg-[#0a0f1a] flex flex-col">
+
+          {/* Top Bar */}
+          <div className="shrink-0 border-b border-white/5 bg-[#0f172a] px-6 py-4 flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-3 mr-2">
+              <div className="size-9 rounded-xl bg-violet-600/20 flex items-center justify-center">
+                <Sparkles size={18} className="text-violet-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-widest text-white">Revisar Extração</h2>
+                <p className="text-[9px] text-slate-500 mt-0.5">
+                  {aiRows.length} peça(s) extraída(s) ·
+                  <span className="text-emerald-400 ml-1">{aiRows.filter(r => r.catalogMatch).length} com catálogo</span>
+                  {aiRows.some(r => !r.catalogMatch) && (
+                    <span className="text-amber-400 ml-1">· {aiRows.filter(r => !r.catalogMatch).length} sem correspondência</span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Operator selector */}
+            <div className="flex items-center gap-2">
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">Operador *</label>
+              <select
+                className="bg-slate-800 border border-white/10 rounded-xl text-xs py-2 px-3 text-white focus:outline-none focus:border-violet-500/50"
+                style={{ colorScheme: 'dark' }}
+                value={aiBulkOperadorId}
+                onChange={(e) => setAiBulkOperadorId(e.target.value)}
+                required
+              >
+                <option value="" style={{ background: '#0f172a' }}>Selecionar...</option>
+                {operadores.map((o) => (
+                  <option key={o.id} value={o.id} style={{ background: '#0f172a' }}>{o.nome}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="ml-auto flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => { setAiStep("upload"); setAiRows([]); setAiImportOpen(true); }}
+                className="px-4 py-2 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-300 hover:text-white transition-colors"
+              >
+                ← Nova Foto
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAiStep("upload"); setAiRows([]); setAiPreviewUrl(null); setAiImageB64(null); }}
+                className="px-4 py-2 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-red-400 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={saveBulkRows}
+                disabled={aiBulkBusy || aiRows.length === 0 || !aiBulkOperadorId}
+                className="px-6 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-black rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center gap-2"
+              >
+                {aiBulkBusy ? (
+                  <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <><ImagePlus size={14} /> Salvar {aiRows.length} peça(s)</>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Content: full-screen table */}
+          <div className="flex-1 overflow-auto p-6">
+            <div className="rounded-2xl border border-white/5 overflow-hidden">
+              <table className="w-full text-left">
+                <thead className="bg-white/[0.03] sticky top-0">
+                  <tr>
+                    {["#", "Peça / Nesting", "Qtd", "Data", "Peso (kg)", "Balsa", "Status", ""].map(h => (
+                      <th key={h} className="px-4 py-3 text-[8px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {aiRows.map((row, idx) => (
+                    <tr key={row.id} className={`group hover:bg-white/[0.02] transition-colors ${!row.catalogMatch ? "bg-amber-500/[0.03]" : ""}`}>
+                      {/* # */}
+                      <td className="px-4 py-3 text-[10px] text-slate-600 font-mono">{idx + 1}</td>
+
+                      {/* Peça editável com autocomplete */}
+                      <td className="px-4 py-3 relative overflow-visible">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            className="w-full min-w-[200px] bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-violet-500/50 font-bold"
+                            value={aiActiveEditIdx === idx ? aiEditQuery : row.peca}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setAiEditQuery(val);
+                              handleAiRowPecaChange(idx, val);
+                            }}
+                            onFocus={() => {
+                              setAiActiveEditIdx(idx);
+                              setAiEditQuery(row.peca);
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => setAiActiveEditIdx(null), 250);
+                            }}
+                            placeholder="Nome da Peça"
+                            autoComplete="off"
+                          />
+                          {aiActiveEditIdx === idx && aiSuggestions.length > 0 && (
+                            <div className="absolute top-full left-0 z-[99999] mt-1 bg-[#1E293B] border border-white/10 rounded-xl shadow-2xl overflow-hidden w-[280px]">
+                              {aiSuggestions.map((p) => (
+                                <button
+                                  key={p.id || p.peca}
+                                  type="button"
+                                  onMouseDown={() => {
+                                    setAiRows(rows => rows.map((r, i) => {
+                                      if (i === idx) {
+                                        return {
+                                          ...r,
+                                          peca: p.peca,
+                                          nesting: p.nesting ?? null,
+                                          painel: p.painel ?? r.painel,
+                                          dimensional: p.dimensional ?? null,
+                                          espessura_mm: p.espessura_mm ?? null,
+                                          peso_kg: p.peso_kg ? Number(p.peso_kg) : null,
+                                          catalogMatch: true
+                                        };
+                                      }
+                                      return r;
+                                    }));
+                                    setAiActiveEditIdx(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2.5 hover:bg-white/[0.06] transition-colors border-b border-white/5 last:border-0"
+                                >
+                                  <div className="text-xs font-bold text-white">{p.peca}</div>
+                                  <div className="text-[9px] text-slate-400 mt-0.5">
+                                    {p.nesting && `CNC: ${p.nesting}`}{p.peso_kg && ` · ${p.peso_kg} kg`}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {row.nesting && <div className="text-[8px] text-slate-500 font-mono mt-1 ml-1">{row.nesting}</div>}
+                      </td>
+
+                      {/* Quantidade */}
+                      <td className="px-4 py-3">
+                        <input
+                          type="number" min={1}
+                          className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center focus:outline-none focus:border-violet-500/50"
+                          value={row.quantidade}
+                          onChange={(e) => setAiRows(rows => rows.map((r, i) =>
+                            i === idx ? { ...r, quantidade: Math.max(1, Number(e.target.value)) } : r
+                          ))}
+                        />
+                      </td>
+
+                      {/* Data individual */}
+                      <td className="px-4 py-3">
+                        <input
+                          type="date"
+                          className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[9px] text-white focus:outline-none focus:border-violet-500/50"
+                          style={{ colorScheme: 'dark' }}
+                          value={row.rowData}
+                          onChange={(e) => setAiRows(rows => rows.map((r, i) =>
+                            i === idx ? { ...r, rowData: e.target.value } : r
+                          ))}
+                        />
+                      </td>
+
+                      {/* Peso */}
+                      <td className="px-4 py-3 text-[10px] font-mono text-slate-400">
+                        {row.peso_kg != null ? `${row.peso_kg} kg` : <span className="text-amber-500/70">—</span>}
+                      </td>
+
+                      {/* Balsa */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[9px] text-white focus:outline-none"
+                            style={{ colorScheme: 'dark' }}
+                            value={row.balsaTipo}
+                            onChange={(e) => setAiRows(rows => rows.map((r, i) =>
+                              i === idx ? { ...r, balsaTipo: e.target.value as any } : r
+                            ))}
+                          >
+                            <option value="RAKE">RAKE</option>
+                            <option value="BOX">BOX</option>
+                            <option value="S/TAG">S/TAG</option>
+                          </select>
+                          {row.balsaTipo !== "S/TAG" && (
+                            <input
+                              type="text"
+                              className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[9px] text-white focus:outline-none"
+                              placeholder="Nº"
+                              value={row.balsaNumero}
+                              onChange={(e) => setAiRows(rows => rows.map((r, i) =>
+                                i === idx ? { ...r, balsaNumero: e.target.value } : r
+                              ))}
+                            />
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3">
+                        {row.catalogMatch ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-bold">
+                            <CheckCircle2 size={9} /> OK
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[8px] font-bold">
+                            <AlertTriangle size={9} /> Sem match
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Remover */}
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setAiRows(rows => rows.filter((_, i) => i !== idx))}
+                          className="text-slate-600 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-400/10 transition-colors"
+                          title="Remover linha"
+                        >
+                          <X size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
 
     </div>
   );
