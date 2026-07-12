@@ -386,7 +386,7 @@ export default function DobraPage() {
     if (aiActiveEditIdx === null || !aiEditQuery || aiEditQuery.length < 2) return [];
     const queryNorm = normalizeCode(aiEditQuery);
     return dbCatalog
-      .filter((item) => normalizeCode(item.peca).includes(queryNorm))
+      .filter((item) => (item.normalizedPeca || "").includes(queryNorm))
       .slice(0, 5);
   }, [aiActiveEditIdx, aiEditQuery, dbCatalog]);
 
@@ -425,7 +425,13 @@ export default function DobraPage() {
         .from("catalogo_pecas")
         .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg")
         .then(({ data }) => {
-          if (data) setDbCatalog(data);
+          if (data) {
+            const enriched = data.map(item => ({
+              ...item,
+              normalizedPeca: normalizeCode(item.peca)
+            }));
+            setDbCatalog(enriched);
+          }
         });
     }
   }, [aiImportOpen]);
@@ -439,7 +445,7 @@ export default function DobraPage() {
     let minDistance = 999;
     
     for (const item of catalogList) {
-      const normDb = normalizeCode(item.peca);
+      const normDb = item.normalizedPeca || normalizeCode(item.peca);
       if (normDb === normOcr) {
         return item;
       }
@@ -455,7 +461,10 @@ export default function DobraPage() {
   };
 
   const handleAiRowPecaChange = (idx: number, newVal: string) => {
-    const cat = findBestCatalogMatch(newVal);
+    // Busca rápida: apenas correspondência exata para não travar a digitação
+    const normNewVal = normalizeCode(newVal);
+    const cat = dbCatalog.find(item => (item.normalizedPeca || "") === normNewVal) || null;
+    
     setAiRows(rows => rows.map((r, i) => {
       if (i === idx) {
         return {
@@ -885,7 +894,10 @@ Se realmente não encontrar nada, retorne: []`;
         const { data: catalogItems } = await supabase
           .from("catalogo_pecas")
           .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg");
-        currentCatalog = (catalogItems || []) as any[];
+        currentCatalog = (catalogItems || []).map((item: any) => ({
+          ...item,
+          normalizedPeca: normalizeCode(item.peca)
+        }));
         setDbCatalog(currentCatalog);
       }
 
@@ -2806,7 +2818,28 @@ Se realmente não encontrar nada, retorne: []`;
                               setAiEditQuery(row.peca);
                             }}
                             onBlur={() => {
-                              setTimeout(() => setAiActiveEditIdx(null), 250);
+                              setTimeout(() => {
+                                setAiActiveEditIdx(null);
+                                // Levenshtein fall-back match ao sair do campo (onBlur)
+                                setAiRows(rows => rows.map((r, i) => {
+                                  if (i === idx && !r.catalogMatch) {
+                                    const cat = findBestCatalogMatch(r.peca);
+                                    if (cat) {
+                                      return {
+                                        ...r,
+                                        peca: cat.peca,
+                                        nesting: cat.nesting ?? null,
+                                        painel: cat.painel ?? r.painel,
+                                        dimensional: cat.dimensional ?? null,
+                                        espessura_mm: cat.espessura_mm ?? null,
+                                        peso_kg: cat.peso_kg ? Number(cat.peso_kg) : null,
+                                        catalogMatch: true
+                                      };
+                                    }
+                                  }
+                                  return r;
+                                }));
+                              }, 250);
                             }}
                             placeholder="Nome da Peça"
                             autoComplete="off"
