@@ -424,6 +424,7 @@ export default function DobraPage() {
       supabase
         .from("catalogo_pecas")
         .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg")
+        .in("tipo_balsa", ["BOX", "RAKE", "BOX/RAKE", "RAKE/BOX"])
         .then(({ data }) => {
           if (data) {
             const enriched = data.map(item => ({
@@ -492,6 +493,7 @@ export default function DobraPage() {
       const { data: results } = await supabase
         .from("catalogo_pecas")
         .select("id, peca, nesting, painel, dimensional, espessura_mm, peso_kg")
+        .in("tipo_balsa", ["BOX", "RAKE", "BOX/RAKE", "RAKE/BOX"])
         .ilike("peca", `%${pecaQuery}%`)
         .limit(10);
       setPecaSuggestions((results ?? []) as CatalogoPeca[]);
@@ -510,6 +512,7 @@ export default function DobraPage() {
       const { data: results } = await supabase
         .from("catalogo_pecas")
         .select("id, peca, nesting, painel, dimensional, espessura_mm, peso_kg")
+        .in("tipo_balsa", ["BOX", "RAKE", "BOX/RAKE", "RAKE/BOX"])
         .ilike("peca", `%${editPecaQuery}%`)
         .limit(10);
       setEditPecaSuggestions((results ?? []) as CatalogoPeca[]);
@@ -893,7 +896,8 @@ Se realmente não encontrar nada, retorne: []`;
       if (currentCatalog.length === 0) {
         const { data: catalogItems } = await supabase
           .from("catalogo_pecas")
-          .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg");
+          .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg")
+          .in("tipo_balsa", ["BOX", "RAKE", "BOX/RAKE", "RAKE/BOX"]);
         currentCatalog = (catalogItems || []).map((item: any) => ({
           ...item,
           normalizedPeca: normalizeCode(item.peca)
