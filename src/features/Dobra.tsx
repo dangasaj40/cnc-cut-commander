@@ -893,6 +893,36 @@ Se realmente não encontrar nada, retorne: []`;
       const enriched: AiBulkRow[] = parsed.map((item, i) => {
         const cat = findBestCatalogMatch(item.peca, currentCatalog);
         const painelLido = item.painel?.trim() ?? "";
+        
+        let detectedBalsaTipo: "RAKE" | "BOX" | "S/TAG" = "RAKE";
+        let detectedBalsaNumero = painelLido;
+
+        const painelUpper = painelLido.toUpperCase();
+        if (painelUpper.includes("BOX") || painelUpper.startsWith("B")) {
+          detectedBalsaTipo = "BOX";
+          const numMatch = painelLido.match(/\d+/);
+          detectedBalsaNumero = numMatch ? numMatch[0] : painelLido.replace(/BOX/gi, "").trim();
+        } else if (painelUpper.includes("RAKE") || painelUpper.includes("RK") || painelUpper.startsWith("R")) {
+          detectedBalsaTipo = "RAKE";
+          const numMatch = painelLido.match(/\d+/);
+          detectedBalsaNumero = numMatch ? numMatch[0] : painelLido.replace(/(RAKE|RK)/gi, "").trim();
+        } else if (
+          painelUpper.includes("S/TAG") || 
+          painelUpper.includes("STAG") || 
+          painelUpper.includes("SEM TAG") || 
+          painelUpper.includes("S/T") ||
+          !painelLido
+        ) {
+          detectedBalsaTipo = "S/TAG";
+          detectedBalsaNumero = "";
+        } else {
+          // Fallback: se tiver apenas número, ou se começar com número
+          const numMatch = painelLido.match(/\d+/);
+          if (numMatch) {
+            detectedBalsaNumero = numMatch[0];
+          }
+        }
+
         return {
           id: `row-${i}-${Date.now()}`,
           peca: cat?.peca ?? item.peca.trim(),
@@ -903,8 +933,8 @@ Se realmente não encontrar nada, retorne: []`;
           espessura_mm: cat?.espessura_mm ?? null,
           peso_kg: cat ? Number(cat.peso_kg) : null,
           catalogMatch: !!cat,
-          balsaTipo: "RAKE" as const,
-          balsaNumero: painelLido,
+          balsaTipo: detectedBalsaTipo,
+          balsaNumero: detectedBalsaNumero,
           aiOperadorNome: item.operador?.trim() ?? null,
           aiData: item.data?.trim() ?? null,
           rowData: today(), // será preenchido abaixo com a data extraída pela IA
@@ -2155,7 +2185,7 @@ Se realmente não encontrar nada, retorne: []`;
                   <table className="w-full text-left">
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr>
-                        {["Data", "Turno", "Peça", "Nesting / Painel", "Balsa", "Dim. / Esp.", "Peso (kg)", "Qtd", "Operador", "Obs.", ""].map((h) => (
+                        {["Data", "Turno", "Peça", "Balsa", "Dim. / Esp.", "Peso (kg)", "Qtd", "Operador", "Obs.", ""].map((h) => (
                           <th key={h} className="px-5 py-3.5 text-[9px] font-bold uppercase tracking-widest text-slate-600 whitespace-nowrap">
                             {h}
                           </th>
@@ -2173,10 +2203,6 @@ Se realmente não encontrar nada, retorne: []`;
                           </td>
                           <td className="px-5 py-3.5">
                             <span className="text-sm font-bold text-slate-900">{r.peca}</span>
-                          </td>
-                          <td className="px-5 py-3.5 text-[10px] text-slate-600">
-                            <div className="font-semibold text-slate-800">{r.nesting || "—"}</div>
-                            <div className="text-[9px] text-slate-500">{r.painel || ""}</div>
                           </td>
                           <td className="px-5 py-3.5 text-xs font-mono">
                             {r.balsa ? (
@@ -2680,28 +2706,29 @@ Se realmente não encontrar nada, retorne: []`;
         <div className="fixed inset-0 z-[9998] bg-[#0a0f1a] flex flex-col">
 
           {/* Top Bar */}
-          <div className="shrink-0 border-b border-white/5 bg-[#0f172a] px-6 py-4 flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-3 mr-2">
-              <div className="size-9 rounded-xl bg-violet-600/20 flex items-center justify-center">
-                <Sparkles size={18} className="text-violet-400" />
+          <div className="shrink-0 border-b border-white/5 bg-[#0f172a] px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+            {/* Title + stats */}
+            <div className="flex items-center gap-3">
+              <div className="size-8 md:size-9 rounded-xl bg-violet-600/20 flex items-center justify-center shrink-0">
+                <Sparkles size={16} className="text-violet-400" />
               </div>
               <div>
-                <h2 className="text-sm font-black uppercase tracking-widest text-white">Revisar Extração</h2>
+                <h2 className="text-xs md:text-sm font-black uppercase tracking-widest text-white">Revisar Extração</h2>
                 <p className="text-[9px] text-slate-500 mt-0.5">
-                  {aiRows.length} peça(s) extraída(s) ·
+                  {aiRows.length} peça(s) ·
                   <span className="text-emerald-400 ml-1">{aiRows.filter(r => r.catalogMatch).length} com catálogo</span>
                   {aiRows.some(r => !r.catalogMatch) && (
-                    <span className="text-amber-400 ml-1">· {aiRows.filter(r => !r.catalogMatch).length} sem correspondência</span>
+                    <span className="text-amber-400 ml-1">· {aiRows.filter(r => !r.catalogMatch).length} sem match</span>
                   )}
                 </p>
               </div>
             </div>
 
-            {/* Operator selector */}
-            <div className="flex items-center gap-2">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">Operador *</label>
+            {/* Operator selector — full width on mobile */}
+            <div className="flex items-center gap-2 md:ml-2">
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap shrink-0">Operador *</label>
               <select
-                className="bg-slate-800 border border-white/10 rounded-xl text-xs py-2 px-3 text-white focus:outline-none focus:border-violet-500/50"
+                className="flex-1 bg-slate-800 border border-white/10 rounded-xl text-xs py-2 px-3 text-white focus:outline-none focus:border-violet-500/50"
                 style={{ colorScheme: 'dark' }}
                 value={aiBulkOperadorId}
                 onChange={(e) => setAiBulkOperadorId(e.target.value)}
@@ -2714,18 +2741,19 @@ Se realmente não encontrar nada, retorne: []`;
               </select>
             </div>
 
-            <div className="ml-auto flex items-center gap-3">
+            {/* Action buttons — 3 cols on mobile, inline on desktop */}
+            <div className="grid grid-cols-3 md:flex md:flex-row md:ml-auto gap-2 md:gap-3">
               <button
                 type="button"
                 onClick={() => { setAiStep("upload"); setAiRows([]); setAiImportOpen(true); }}
-                className="px-4 py-2 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-300 hover:text-white transition-colors"
+                className="col-span-1 px-3 md:px-4 py-2 border border-white/10 rounded-xl text-[10px] md:text-xs font-bold uppercase tracking-widest text-slate-300 hover:text-white transition-colors text-center"
               >
-                ← Nova Foto
+                ← Foto
               </button>
               <button
                 type="button"
                 onClick={() => { setAiStep("upload"); setAiRows([]); setAiPreviewUrl(null); setAiImageB64(null); }}
-                className="px-4 py-2 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-red-400 transition-colors"
+                className="col-span-1 px-3 md:px-4 py-2 border border-white/10 rounded-xl text-[10px] md:text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-red-400 transition-colors text-center"
               >
                 Cancelar
               </button>
@@ -2733,21 +2761,21 @@ Se realmente não encontrar nada, retorne: []`;
                 type="button"
                 onClick={saveBulkRows}
                 disabled={aiBulkBusy || aiRows.length === 0 || !aiBulkOperadorId}
-                className="px-6 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-black rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center gap-2"
+                className="col-span-1 px-3 md:px-6 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-black rounded-xl text-[10px] md:text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-1 md:gap-2"
               >
                 {aiBulkBusy ? (
                   <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
-                  <><ImagePlus size={14} /> Salvar {aiRows.length} peça(s)</>
+                  <><ImagePlus size={13} /> Salvar {aiRows.length}</>
                 )}
               </button>
             </div>
           </div>
 
           {/* Content: full-screen table */}
-          <div className="flex-1 overflow-auto p-6">
-            <div className="rounded-2xl border border-white/5 overflow-hidden">
-              <table className="w-full text-left">
+          <div className="flex-1 overflow-auto p-3 md:p-6">
+            <div className="rounded-2xl border border-white/5 overflow-x-auto">
+              <table className="w-full min-w-[850px] text-left">
                 <thead className="bg-white/[0.03] sticky top-0">
                   <tr>
                     {["#", "Peça / Nesting", "Qtd", "Data", "Peso (kg)", "Balsa", "Status", ""].map(h => (
