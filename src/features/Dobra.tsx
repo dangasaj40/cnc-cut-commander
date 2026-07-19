@@ -2848,25 +2848,6 @@ Se realmente não encontrar nada, retorne: []`;
                             onBlur={() => {
                               setTimeout(() => {
                                 setAiActiveEditIdx(null);
-                                // Levenshtein fall-back match ao sair do campo (onBlur)
-                                setAiRows(rows => rows.map((r, i) => {
-                                  if (i === idx && !r.catalogMatch) {
-                                    const cat = findBestCatalogMatch(r.peca);
-                                    if (cat) {
-                                      return {
-                                        ...r,
-                                        peca: cat.peca,
-                                        nesting: cat.nesting ?? null,
-                                        painel: cat.painel ?? r.painel,
-                                        dimensional: cat.dimensional ?? null,
-                                        espessura_mm: cat.espessura_mm ?? null,
-                                        peso_kg: cat.peso_kg ? Number(cat.peso_kg) : null,
-                                        catalogMatch: true
-                                      };
-                                    }
-                                  }
-                                  return r;
-                                }));
                               }, 250);
                             }}
                             placeholder="Nome da Peça"
