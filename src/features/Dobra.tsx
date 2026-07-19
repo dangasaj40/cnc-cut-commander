@@ -827,9 +827,9 @@ ESTRUTURA DA TABELA (colunas da esquerda para direita):
 5. ASSINATURA OPERADOR — nome cursivo do operador (ex: "Andreza", "Anderson", "Osvaldo").
 
 REGRAS OBRIGATÓRIAS:
-1. Cada linha da tabela com marcação em DOBRAR representa 1 (UMA) peça dobrada.
-2. Se a mesma PEÇA aparece várias vezes com o mesmo PAINEL → some as ocorrências no campo "quantidade".
-3. Se a mesma PEÇA aparece com PAINEIs diferentes → crie entradas SEPARADAS para cada PAINEL.
+1. Cada linha preenchida na tabela com marcação em DOBRAR representa 1 (UMA) linha no JSON.
+2. NUNCA some ou agrupe peças iguais. Se a mesma peça aparecer várias vezes em linhas separadas na imagem, retorne itens SEPARADOS no JSON para cada linha física, mantendo exatamente a ordem sequencial em que aparecem de cima para baixo.
+3. Cada objeto deve ter a quantidade padrão de 1 no campo "quantidade".
 4. Leia TODOS os códigos de peça exatamente como escritos (ex: "BPRRFA85HB4", "RFRO-RFA94HB55C").
 5. Não tente corrigir ou normalizar os códigos de peça — copie-os literalmente.
 6. Se PAINEL estiver em branco/vazio para uma linha, use null ou string vazia.
@@ -838,7 +838,7 @@ REGRAS OBRIGATÓRIAS:
 
 RETORNE APENAS um array JSON puro, sem markdown, sem explicações, sem texto antes ou depois.
 Formato de cada objeto:
-{"peca": "RD HB 8B", "painel": "BOX12", "quantidade": 3, "data": "24/02/26", "operador": "Andreza"}
+{"peca": "RD HB 8B", "painel": "BOX12", "quantidade": 1, "data": "24/02/26", "operador": "Andreza"}
 
 IMPORTANTE: Se houver qualquer dúvida na leitura, faça sua melhor estimativa — NUNCA retorne array vazio se houver linhas com marcação OK visíveis na imagem.
 Se realmente não encontrar nada, retorne: []`;
