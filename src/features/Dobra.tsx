@@ -419,24 +419,22 @@ export default function DobraPage() {
     loadParadas();
   }, [filtroInicio, filtroFim, maquinaAtiva]);
 
-  // Carrega catálogo ao abrir importador por IA
+  // Carrega o catálogo de peças ao inicializar o componente para buscas instantâneas
   useEffect(() => {
-    if (aiImportOpen && dbCatalog.length === 0) {
-      supabase
-        .from("catalogo_pecas")
-        .select("peca, nesting, painel, dimensional, espessura_mm, peso_kg")
-        .in("tipo_balsa", ["BOX", "RAKE", "BOX/RAKE", "RAKE/BOX"])
-        .then(({ data }) => {
-          if (data) {
-            const enriched = data.map(item => ({
-              ...item,
-              normalizedPeca: normalizeCode(item.peca)
-            }));
-            setDbCatalog(enriched);
-          }
-        });
-    }
-  }, [aiImportOpen]);
+    supabase
+      .from("catalogo_pecas")
+      .select("id, peca, nesting, painel, dimensional, espessura_mm, peso_kg, tipo_balsa")
+      .in("tipo_balsa", ["BOX", "RAKE", "BOX/RAKE", "RAKE/BOX"])
+      .then(({ data }) => {
+        if (data) {
+          const enriched = data.map(item => ({
+            ...item,
+            normalizedPeca: normalizeCode(item.peca)
+          }));
+          setDbCatalog(enriched);
+        }
+      });
+  }, []);
 
   const findBestCatalogMatch = (ocrPeca: string, catalogList = dbCatalog) => {
     if (!ocrPeca || catalogList.length === 0) return null;
@@ -484,43 +482,33 @@ export default function DobraPage() {
     }));
   };
 
-  // Busca dinâmica de peças — Insert
+  // Busca dinâmica de peças — Insert (em memória, com normalização de traços/espaços)
   useEffect(() => {
     if (!pecaQuery || pecaQuery.length < 2) {
       setPecaSuggestions([]);
       return;
     }
-    const timer = setTimeout(async () => {
-      const { data: results } = await supabase
-        .from("catalogo_pecas")
-        .select("id, peca, nesting, painel, dimensional, espessura_mm, peso_kg")
-        .in("tipo_balsa", ["BOX", "RAKE", "BOX/RAKE", "RAKE/BOX"])
-        .ilike("peca", `%${pecaQuery}%`)
-        .limit(10);
-      setPecaSuggestions((results ?? []) as CatalogoPeca[]);
-      setShowSuggestions(true);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [pecaQuery]);
+    const queryNorm = normalizeCode(pecaQuery);
+    const matched = dbCatalog
+      .filter((item) => (item.normalizedPeca || "").includes(queryNorm))
+      .slice(0, 10);
+    setPecaSuggestions(matched as CatalogoPeca[]);
+    setShowSuggestions(true);
+  }, [pecaQuery, dbCatalog]);
 
-  // Busca dinâmica de peças — Edit
+  // Busca dinâmica de peças — Edit (em memória, com normalização de traços/espaços)
   useEffect(() => {
     if (!editPecaQuery || editPecaQuery.length < 2 || editSelectedPeca?.peca === editPecaQuery) {
       setEditPecaSuggestions([]);
       return;
     }
-    const timer = setTimeout(async () => {
-      const { data: results } = await supabase
-        .from("catalogo_pecas")
-        .select("id, peca, nesting, painel, dimensional, espessura_mm, peso_kg")
-        .in("tipo_balsa", ["BOX", "RAKE", "BOX/RAKE", "RAKE/BOX"])
-        .ilike("peca", `%${editPecaQuery}%`)
-        .limit(10);
-      setEditPecaSuggestions((results ?? []) as CatalogoPeca[]);
-      setEditShowSuggestions(true);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [editPecaQuery, editSelectedPeca]);
+    const queryNorm = normalizeCode(editPecaQuery);
+    const matched = dbCatalog
+      .filter((item) => (item.normalizedPeca || "").includes(queryNorm))
+      .slice(0, 10);
+    setEditPecaSuggestions(matched as CatalogoPeca[]);
+    setEditShowSuggestions(true);
+  }, [editPecaQuery, editSelectedPeca, dbCatalog]);
 
   // ─────────────────────────────────────────────
   // Data loaders
