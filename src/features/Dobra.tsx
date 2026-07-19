@@ -2818,7 +2818,7 @@ Se realmente não encontrar nada, retorne: []`;
               <table className="w-full min-w-[950px] text-left">
                 <thead className="bg-white/[0.03] sticky top-0">
                   <tr>
-                    {["#", "Peça / Nesting", "Data", "Operador", "Peso (kg)", "Balsa", "Status", ""].map(h => (
+                    {["#", "Peça / Nesting", "Qtd", "Data", "Operador", "Peso (kg)", "Balsa", "Status", ""].map(h => (
                       <th key={h} className="px-4 py-3 text-[8px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -2908,6 +2908,18 @@ Se realmente não encontrar nada, retorne: []`;
                           )}
                         </div>
                         {row.nesting && <div className="text-[8px] text-slate-500 font-mono mt-1 ml-1">{row.nesting}</div>}
+                      </td>
+
+                      {/* Quantidade */}
+                      <td className="px-4 py-3">
+                        <input
+                          type="number" min={1}
+                          className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center focus:outline-none focus:border-violet-500/50"
+                          value={row.quantidade}
+                          onChange={(e) => setAiRows(rows => rows.map((r, i) =>
+                            i === idx ? { ...r, quantidade: Math.max(1, Number(e.target.value)) } : r
+                          ))}
+                        />
                       </td>
 
                       {/* Data individual */}
