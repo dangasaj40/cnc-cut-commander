@@ -263,6 +263,7 @@ export default function DobraPage() {
     aiOperadorNome: string | null;
     aiData: string | null;
     rowData: string;  // data individual por linha (ISO YYYY-MM-DD)
+    rowOperadorId: string; // operador individual por linha (ID)
   }
   const [aiImportOpen, setAiImportOpen] = useState(false);
   const aiFileRef = useRef<HTMLInputElement>(null);
@@ -939,6 +940,16 @@ Se realmente não encontrar nada, retorne: []`;
           }
         }
 
+        // Tenta encontrar correspondência de operador para cada linha
+        const rowOpNome = item.operador?.trim()?.toUpperCase() ?? "";
+        let matchedOpId = "";
+        if (rowOpNome) {
+          const opMatch = operadores.find((o) =>
+            o.nome.toUpperCase().includes(rowOpNome) || rowOpNome.includes(o.nome.toUpperCase().split(" ")[0])
+          );
+          if (opMatch) matchedOpId = opMatch.id;
+        }
+
         return {
           id: `row-${i}-${Date.now()}`,
           peca: cat?.peca ?? item.peca.trim(),
@@ -954,6 +965,7 @@ Se realmente não encontrar nada, retorne: []`;
           aiOperadorNome: item.operador?.trim() ?? null,
           aiData: item.data?.trim() ?? null,
           rowData: today(), // será preenchido abaixo com a data extraída pela IA
+          rowOperadorId: matchedOpId,
         };
       });
 
@@ -1006,28 +1018,36 @@ Se realmente não encontrar nada, retorne: []`;
   };
 
   const saveBulkRows = async () => {
-    if (!aiBulkOperadorId) { alert("Selecione o operador responsável."); return; }
+    // Valida se todas as linhas têm um operador definido (seja individual ou global)
+    const hasMissingOperator = aiRows.some(r => !r.rowOperadorId && !aiBulkOperadorId);
+    if (hasMissingOperator) {
+      alert("Selecione o operador responsável para todas as peças.");
+      return;
+    }
     if (aiRows.length === 0) return;
     setAiBulkBusy(true);
     try {
-      const op = operadores.find((o) => o.id === aiBulkOperadorId);
-      const payload = aiRows.map((r) => ({
-        peca: r.peca,
-        nesting: r.nesting,
-        painel: r.painel,
-        dimensional: r.dimensional,
-        espessura_mm: r.espessura_mm,
-        peso_kg: r.peso_kg,
-        quantidade: r.quantidade,
-        operador_id: aiBulkOperadorId,
-        operador_nome: op?.nome ?? null,
-        turno: op?.turno ?? null,
-        maquina: maquinaAtiva,
-        balsa: r.balsaTipo === "S/TAG" ? "S/TAG" : (r.balsaNumero.trim() ? `${r.balsaTipo}-${r.balsaNumero.trim()}` : null),
-        data: r.rowData || aiBulkData,
-        observacoes: "Importado via IA",
-        criado_por: user?.id,
-      }));
+      const payload = aiRows.map((r) => {
+        const rowOpId = r.rowOperadorId || aiBulkOperadorId;
+        const op = operadores.find((o) => o.id === rowOpId);
+        return {
+          peca: r.peca,
+          nesting: r.nesting,
+          painel: r.painel,
+          dimensional: r.dimensional,
+          espessura_mm: r.espessura_mm,
+          peso_kg: r.peso_kg,
+          quantidade: r.quantidade,
+          operador_id: rowOpId,
+          operador_nome: op?.nome ?? null,
+          turno: op?.turno ?? null,
+          maquina: maquinaAtiva,
+          balsa: r.balsaTipo === "S/TAG" ? "S/TAG" : (r.balsaNumero.trim() ? `${r.balsaTipo}-${r.balsaNumero.trim()}` : null),
+          data: r.rowData || aiBulkData,
+          observacoes: "Importado via IA",
+          criado_por: user?.id,
+        };
+      });
 
       const { error } = await supabase.from("dobra").insert(payload);
       if (error) throw error;
@@ -2747,7 +2767,11 @@ Se realmente não encontrar nada, retorne: []`;
                 className="flex-1 bg-slate-800 border border-white/10 rounded-xl text-xs py-2 px-3 text-white focus:outline-none focus:border-violet-500/50"
                 style={{ colorScheme: 'dark' }}
                 value={aiBulkOperadorId}
-                onChange={(e) => setAiBulkOperadorId(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAiBulkOperadorId(val);
+                  setAiRows(rows => rows.map(r => ({ ...r, rowOperadorId: val })));
+                }}
                 required
               >
                 <option value="" style={{ background: '#0f172a' }}>Selecionar...</option>
@@ -2791,10 +2815,10 @@ Se realmente não encontrar nada, retorne: []`;
           {/* Content: full-screen table */}
           <div className="flex-1 overflow-auto p-3 md:p-6">
             <div className="rounded-2xl border border-white/5 overflow-x-auto">
-              <table className="w-full min-w-[850px] text-left">
+              <table className="w-full min-w-[950px] text-left">
                 <thead className="bg-white/[0.03] sticky top-0">
                   <tr>
-                    {["#", "Peça / Nesting", "Qtd", "Data", "Peso (kg)", "Balsa", "Status", ""].map(h => (
+                    {["#", "Peça / Nesting", "Qtd", "Data", "Operador", "Peso (kg)", "Balsa", "Status", ""].map(h => (
                       <th key={h} className="px-4 py-3 text-[8px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -2909,6 +2933,23 @@ Se realmente não encontrar nada, retorne: []`;
                             i === idx ? { ...r, rowData: e.target.value } : r
                           ))}
                         />
+                      </td>
+
+                      {/* Operador individual */}
+                      <td className="px-4 py-3">
+                        <select
+                          className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[9px] text-white focus:outline-none focus:border-violet-500/50"
+                          style={{ colorScheme: 'dark' }}
+                          value={row.rowOperadorId || ""}
+                          onChange={(e) => setAiRows(rows => rows.map((r, i) =>
+                            i === idx ? { ...r, rowOperadorId: e.target.value } : r
+                          ))}
+                        >
+                          <option value="" style={{ background: '#0f172a' }}>Selecionar...</option>
+                          {operadores.map((o) => (
+                            <option key={o.id} value={o.id} style={{ background: '#0f172a' }}>{o.nome}</option>
+                          ))}
+                        </select>
                       </td>
 
                       {/* Peso */}
